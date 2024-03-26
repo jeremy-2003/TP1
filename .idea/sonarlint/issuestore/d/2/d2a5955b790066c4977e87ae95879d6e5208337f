@@ -1,7 +1,0 @@
-
-v	java:S120"ZRename this package name to match the regular expression '^[a-z_]+(\.[a-z_][a-z0-9_]*)*$'.(×ÂÆ³8ÏàÄç1
-G	java:S1060"+Replace this use of System.out by a logger.(Ü×À8ÏàÄç1
-M
-java:S1128"+Remove this unused import 'java.util.List'.(Õë±Äøÿÿÿÿ8çÜıÆç1
-M
-java:S1068"1Remove this unused "openAiService" private field.(šâŠ8‘ÏàÄç1
