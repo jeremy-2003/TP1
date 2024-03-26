@@ -1,0 +1,15 @@
+
+{	java:S120"ZRename this package name to match the regular expression '^[a-z_]+(\.[a-z_][a-z0-9_]*)*$'.(ê¬‚üÿÿÿÿ8ñ×¾Àç1
+|
+java:S1450"_Remove the "downloadLocation" field and declare it as a local variable in the relevant methods.(óƒåØ8È„µÄç1
+G	java:S106#"+Replace this use of System.out by a logger.(½şÛÈ8Í„µÄç1
+\
+java:S1117'":Rename "cookie" which hides the field declared at line 18.(À¶ˆƒşÿÿÿÿ8Ï„µÄç1
+G	java:S106("+Replace this use of System.out by a logger.(ŸŸã•8Ï„µÄç1
+M
+java:S1128	"0Remove this unused import 'java.nio.file.Files'.(‚ƒü8ÛÀµÄç1
+L
+java:S1128
+"/Remove this unused import 'java.nio.file.Path'.(×²êÂ8ÛÀµÄç1
+Q
+java:S1068"4Remove this unused "downloadLocation" private field.(óƒåØ8Ğ„µÄç1

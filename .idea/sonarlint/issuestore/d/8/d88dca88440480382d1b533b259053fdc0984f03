@@ -1,0 +1,12 @@
+
+v	java:S120"ZRename this package name to match the regular expression '^[a-z_]+(\.[a-z_][a-z0-9_]*)*$'.(×ÂÆ³8Ñ¾óç1
+L	java:S106$"+Replace this use of System.out by a logger.(¦†µ’úÿÿÿÿ8øĞç1
+L	java:S106&"+Replace this use of System.err by a logger.(Àëµôıÿÿÿÿ8€œ„ç1
+L	java:S1064"+Replace this use of System.out by a logger.(¦†µ’úÿÿÿÿ8ä§‚Ÿç1
+G	java:S1066"+Replace this use of System.err by a logger.(€¼—ï8å§‚Ÿç1
+u
+java:S1128"SRemove this unused import 'org.springframework.beans.factory.annotation.Autowired'.(¡¸Îùÿÿÿÿ8æ§‚Ÿç1
+n
+java:S1128"LRemove this unused import 'org.springframework.web.multipart.MultipartFile'.(ôŸœÿÿÿÿÿ8æ§‚Ÿç1
+^
+java:S1128"ARemove this unused import 'javax.print.attribute.standard.Media'.(‰šäÁ8æ§‚Ÿç1
