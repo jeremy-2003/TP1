@@ -25,13 +25,7 @@ public class InfobipApiClient {
             if (!response.isSuccessful()) throw new IOException("Unexpected code " + response);
 
             String responseBody = response.body().string();
-            // Parse JSON response to get the token
-            // Aquí debes parsear la respuesta JSON para obtener el token
-            // En este ejemplo, se asume que la respuesta contiene un campo 'token'
             return responseBody;
         }
     }
-
-    // Agrega métodos para realizar llamadas a otros puntos finales de la API de Infobip
-    // según tus necesidades
 }
