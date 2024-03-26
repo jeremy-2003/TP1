@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Map;
 
 import org.springframework.stereotype.Component;
+import upc.edu.chatbotIA.ChatbotIaApplication;
 
 @Component
 public class AudioDownloader {
@@ -29,7 +30,11 @@ public class AudioDownloader {
     public File downloadAudio(String url) throws IOException {
         URL audioUrl = new URL(url);
         HttpURLConnection connection = (HttpURLConnection) audioUrl.openConnection();
-        connection.setRequestProperty("Cookie", cookie);
+        // Obtener el token de la cookie
+        String token = ChatbotIaApplication.infobipToken;
+
+        // Establecer el token como el valor de la cookie
+        connection.setRequestProperty("Cookie", "IbAuthCookie=" + token);
 
         Map<String, List<String>> headerFields = connection.getRequestProperties();
         System.out.println("Cookies enviadas:");
