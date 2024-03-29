@@ -1,7 +1,6 @@
 package upc.edu.chatbotIA.config;
 
 import org.springframework.stereotype.Component;
-import upc.edu.chatbotIA.config.InfobipApiClient;
 
 import java.io.IOException;
 import java.time.LocalDateTime;
