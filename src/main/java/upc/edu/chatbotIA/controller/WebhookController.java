@@ -57,6 +57,9 @@ public class WebhookController {
                     File mp3File = audioDownloader.downloadAudio(voiceUrl);
                     // Transcribir el audio a texto
                     String transcription = transcriptionService.transcribeAudio(mp3File);
+                    ChatMessage chatMessage = chatGptService.getChatCompletion(messageData.getFrom(), transcription);
+                    String responseText = chatMessage.getContent();
+                    whatsAppService.sendTextMessage(messageData.getFrom(), responseText);
                     System.out.println("Transcription: " + transcription);
                     chatGptService.getChatCompletion(messageData.getFrom(), transcription);
                 } else {

@@ -27,13 +27,22 @@ public class ChatGptService {
     public ChatMessage getChatCompletion(String userId, String userMessage) {
         // Recuperar las conversaciones anteriores del usuario
         List<Conversation> previousConversations = conversationRepository.findByUserIdOrderByTimestampAsc(userId);
-
+        ChatMessage systemMessage = new ChatMessage();
         // Construir la lista de mensajes de chat incluyendo el historial de conversación
         List<ChatMessage> chatMessages = new ArrayList<>();
         for (Conversation conversation : previousConversations) {
             chatMessages.add(new ChatMessage("user", conversation.getPrompt()));
             chatMessages.add(new ChatMessage("assistant", conversation.getResponse()));
         }
+        systemMessage.setRole("system");
+        systemMessage.setContent("[INSTRUCCIONES]: Actua como un chatbot llamado 'TeleBuddy' el cual te encargaras de la atencion al cliente para la empresa TelecomunicacionesCenter" +
+                "[INSTRUCCIONES]: Solo tendras que responder lo que esta en la base de datos, Este sera tu base de datos: "+
+                " Tienes que brindar información de los servicios de cable y internet. TelecomunicacionesCenter ofrece distintos planes de fibra optica, DSL, y en cable es solo satelital con 100 canales entre extranjeron y nacionales." +
+                " Nos puedes contactar por whatsapp mediante el numero 994 283 802 }\n" +
+                "[IMPORTANTE]: Deberas de responder las preguntas sin extenderte mucho, con el fin de tener una conversacion fluida" +
+                "donde debera interactuar con el cliente con el fin de que brindar información y solucionar dudas");
+
+        chatMessages.add(systemMessage);
         chatMessages.add(new ChatMessage("user", userMessage));
 
         // Construir la solicitud de completado de chat
