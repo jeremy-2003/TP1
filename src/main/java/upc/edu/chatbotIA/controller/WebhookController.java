@@ -1,6 +1,19 @@
 package upc.edu.chatbotIA.controller;
+import java.io.File;
+import java.io.IOException;
+import java.security.GeneralSecurityException;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.infobip.model.*;
+import com.infobip.model.WhatsAppWebhookInboundMessage;
+import com.infobip.model.WhatsAppWebhookInboundMessageData;
+import com.infobip.model.WhatsAppWebhookInboundMessageResult;
+import com.infobip.model.WhatsAppWebhookInboundTextMessage;
+import com.infobip.model.WhatsAppWebhookInboundVoiceMessage;
+
 import com.theokanning.openai.completion.chat.ChatMessage;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -8,14 +21,14 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
+
+import upc.edu.chatbotIA.model.Relation;
+import upc.edu.chatbotIA.repository.RelationRepository;
 import upc.edu.chatbotIA.service.ChatGptService;
+import upc.edu.chatbotIA.service.SheetsService;
 import upc.edu.chatbotIA.service.TranscriptionService;
 import upc.edu.chatbotIA.service.WhatsAppService;
 import upc.edu.chatbotIA.util.AudioDownloader;
-
-
-import java.io.File;
-import java.io.IOException;
 
 @RestController
 public class WebhookController {
@@ -25,45 +38,45 @@ public class WebhookController {
     private final TranscriptionService transcriptionService;
     private final ChatGptService chatGptService;
     private final WhatsAppService whatsAppService;
+    private final SheetsService sheetsService;
+
+    private final RelationRepository relationRepository;
 
     @Autowired
-    public WebhookController(ObjectMapper objectMapper, AudioDownloader audioDownloader, TranscriptionService transcriptionService, ChatGptService chatGptService, WhatsAppService whatsAppService) {
+    public WebhookController(ObjectMapper objectMapper, AudioDownloader audioDownloader,
+                             TranscriptionService transcriptionService, ChatGptService chatGptService, WhatsAppService whatsAppService,
+                             SheetsService sheetsService, RelationRepository relationRepository) {
         this.objectMapper = objectMapper;
         this.audioDownloader = audioDownloader;
         this.transcriptionService = transcriptionService;
         this.chatGptService = chatGptService;
         this.whatsAppService = whatsAppService;
+        this.sheetsService = sheetsService;
+        this.relationRepository = relationRepository;
     }
+
+    private Map<String, Boolean> isFirstMessage = new HashMap<>();
 
     @PostMapping("/incoming-whatsapp")
     public ResponseEntity<Void> receiveWhatsApp(@RequestBody String requestBody) {
         try {
-            WhatsAppWebhookInboundMessageResult messages = objectMapper.readValue(requestBody, WhatsAppWebhookInboundMessageResult.class);
+            WhatsAppWebhookInboundMessageResult messages = objectMapper.readValue(requestBody,
+                    WhatsAppWebhookInboundMessageResult.class);
             for (WhatsAppWebhookInboundMessageData messageData : messages.getResults()) {
-                WhatsAppWebhookInboundMessage message = messageData.getMessage();
-                String messageType = String.valueOf(message.getType());
-                if (messageType.equals("TEXT")) {
-                    WhatsAppWebhookInboundTextMessage textMessage = (WhatsAppWebhookInboundTextMessage) message;
-                    String text = textMessage.getText();
-                    ChatMessage chatMessage = chatGptService.getChatCompletion(messageData.getFrom(), text);
-                    String responseText = chatMessage.getContent();
-                    whatsAppService.sendTextMessage(messageData.getFrom(), responseText);
-                } else if (messageType.equals("VOICE")) {
-                    WhatsAppWebhookInboundVoiceMessage voiceMessage = (WhatsAppWebhookInboundVoiceMessage) message;
-                    String voiceUrl = voiceMessage.getUrl();
-                    System.out.println("Voice message received:");
-                    System.out.println("URL: " + voiceUrl);
-                    // Descargar el audio desde la URL y guardar con extensión MP3
-                    File mp3File = audioDownloader.downloadAudio(voiceUrl);
-                    // Transcribir el audio a texto
-                    String transcription = transcriptionService.transcribeAudio(mp3File);
-                    ChatMessage chatMessage = chatGptService.getChatCompletion(messageData.getFrom(), transcription);
-                    String responseText = chatMessage.getContent();
-                    whatsAppService.sendTextMessage(messageData.getFrom(), responseText);
-                    System.out.println("Transcription: " + transcription);
-                    chatGptService.getChatCompletion(messageData.getFrom(), transcription);
+                String senderId = messageData.getFrom();
+                Optional<Relation> existingRelation = relationRepository.findByUserId(senderId);
+                System.out.println(relationRepository.findByUserId(senderId));
+                if (existingRelation.isPresent()) {
+                    // Si el usuario ya está registrado, procesar el mensaje normalmente
+                    processMessage(senderId, messageData.getMessage());
                 } else {
-                    System.out.println("Unsupported message type: " + messageType);
+                    // Si el usuario no está registrado, proceder como antes
+                    if (!isFirstMessage.containsKey(senderId)) {
+                        isFirstMessage.put(senderId, true);
+                        sendWelcomeMessage(senderId);
+                    } else {
+                        processMessage(senderId, messageData.getMessage());
+                    }
                 }
             }
             return ResponseEntity.ok().build();
@@ -71,5 +84,71 @@ public class WebhookController {
             e.printStackTrace();
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
+    }
+
+    private void processMessage(String senderId, WhatsAppWebhookInboundMessage message) throws IOException {
+        String messageType = String.valueOf(message.getType());
+        if (messageType.equals("TEXT")) {
+            WhatsAppWebhookInboundTextMessage textMessage = (WhatsAppWebhookInboundTextMessage) message;
+            String text = textMessage.getText();
+            if (isFirstMessage.get(senderId)) {
+                String userData = searchDniInExcel(senderId, text);
+                whatsAppService.sendTextMessage(senderId, userData);
+                isFirstMessage.put(senderId, false);
+            } else {
+                ChatMessage chatMessage = chatGptService.getChatCompletion(senderId, text);
+                String responseText = chatMessage.getContent();
+                whatsAppService.sendTextMessage(senderId, responseText);
+            }
+        } else if (messageType.equals("VOICE")) {
+            WhatsAppWebhookInboundVoiceMessage voiceMessage = (WhatsAppWebhookInboundVoiceMessage) message;
+            String voiceUrl = voiceMessage.getUrl();
+            System.out.println("Voice message received:");
+            System.out.println("URL: " + voiceUrl);
+            // Descargar el audio desde la URL y guardar con extensión MP3
+            File mp3File = audioDownloader.downloadAudio(voiceUrl);
+            // Transcribir el audio a texto
+            String transcription = transcriptionService.transcribeAudio(mp3File);
+            ChatMessage chatMessage = chatGptService.getChatCompletion(senderId, transcription);
+            String responseText = chatMessage.getContent();
+            whatsAppService.sendTextMessage(senderId, responseText);
+            System.out.println("Transcription: " + transcription);
+            chatGptService.getChatCompletion(senderId, transcription);
+        } else {
+            System.out.println("Unsupported message type: " + messageType);
+        }
+    }
+
+
+    private void sendWelcomeMessage(String senderId) {
+        // Envía un mensaje de bienvenida y solicita el DNI
+        String welcomeMessage = "¡Bienvenido! Por favor, ingresa tu DNI:";
+        whatsAppService.sendTextMessage(senderId, welcomeMessage);
+    }
+
+    private String searchDniInExcel(String senderId, String dni) {
+        try {
+            List<List<Object>> excelData = sheetsService.connectToGoogleSheets(); // Obtener datos del Excel
+            for (List<Object> row : excelData) {
+                if (row.size() > 2 && row.get(2) instanceof String && row.get(2).equals(dni)) {
+                    // Si encuentra el DNI, devuelve una cadena de texto con los datos relacionados
+                    String name = row.get(0) + " " + row.get(1);
+                    saveRelation(senderId, dni, name); // Guardar relación en la base de datos
+                    return "Hola " + name + ", es un gusto que te comuniques con nosotros. ¿En qué podemos ayudarte?";
+                }
+            }
+        } catch (IOException | GeneralSecurityException e) {
+            e.printStackTrace();
+        }
+        return "Vemos que no eres cliente nuestro. ¿En qué podemos ayudarte?";
+    }
+
+    private void saveRelation(String senderId, String dni, String name) {
+        // Guardar la relación en la base de datos
+        Relation relation = new Relation();
+        relation.setUserId(senderId);
+        relation.setDni(Integer.parseInt(dni));
+        relation.setName(name);
+        relationRepository.save(relation);
     }
 }

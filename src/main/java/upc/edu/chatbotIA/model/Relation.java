@@ -3,19 +3,14 @@ import lombok.Getter;
 import lombok.Setter;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.relational.core.mapping.Table;
-import java.time.LocalDateTime;
 
-@Table("conversation")
+@Table("relation")
 @Getter
 @Setter
-public class Conversation {
-
+public class Relation {
     @Id
     private Long id;
     private String userId;
-    private String prompt;
-    private String response;
-    private LocalDateTime timestamp;
-
-    // Constructor, getters y setters
+    private Integer dni;
+    private String name;
 }
