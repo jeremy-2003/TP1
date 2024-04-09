@@ -2,6 +2,7 @@ package upc.edu.chatbotIA.controller;
 import java.io.File;
 import java.io.IOException;
 import java.security.GeneralSecurityException;
+import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -53,6 +54,7 @@ public class WebhookController {
         this.whatsAppService = whatsAppService;
         this.sheetsService = sheetsService;
         this.relationRepository = relationRepository;
+
     }
 
     private Map<String, Boolean> isFirstMessage = new HashMap<>();
@@ -65,12 +67,45 @@ public class WebhookController {
             for (WhatsAppWebhookInboundMessageData messageData : messages.getResults()) {
                 String senderId = messageData.getFrom();
                 Optional<Relation> existingRelation = relationRepository.findByUserId(senderId);
-                System.out.println(relationRepository.findByUserId(senderId));
                 if (existingRelation.isPresent()) {
-                    // Si el usuario ya está registrado, procesar el mensaje normalmente
-                    processMessage(senderId, messageData.getMessage());
+                    Relation relation = existingRelation.get();
+                    LocalDateTime now = LocalDateTime.now();
+                    if (relation.getActive() && relation.getExpirationTime().isAfter(now)) {
+                        // Si el usuario ya está registrado, la relación está activa y no ha expirado, procesar el mensaje normalmente
+                        System.out.println("Entró en este flujo 3ero");
+                        isFirstMessage.remove(senderId);
+                        processMessage(senderId, messageData.getMessage());
+                        // Actualizar la marca de tiempo de interacción
+                        relation.setLastInteractionTime(now);
+                        relationRepository.save(relation);
+                    } else if (!relation.getActive() && relation.getExpirationTime().isAfter(now)) {
+                        // Si la relación está inactiva pero no ha expirado, enviar un saludo personalizado y procesar el mensaje normalmente
+                        String welcomeMessage = "Hola " + relation.getName() + ", ¡bienvenido de nuevo! ¿En qué podemos ayudarte?";
+                        whatsAppService.sendTextMessage(senderId, welcomeMessage);
+                        processMessage(senderId, messageData.getMessage());
+                        // Actualizar la marca de tiempo de interacción y reactivar la relación
+                        relation.setLastInteractionTime(now);
+                        relation.setActive(true);
+                        relationRepository.save(relation);
+                    } else {
+                        // Si la relación ha expirado, eliminar la relación y solicitar el DNI nuevamente
+                        relationRepository.delete(relation);
+                        if (!isFirstMessage.containsKey(senderId)) {
+                            isFirstMessage.put(senderId, true);
+                            sendWelcomeMessage(senderId);
+                        } else {
+                            WhatsAppWebhookInboundMessage message = messageData.getMessage();
+                            if (message.getType().equals("TEXT")) {
+                                WhatsAppWebhookInboundTextMessage textMessage = (WhatsAppWebhookInboundTextMessage) message;
+                                String text = textMessage.getText();
+                                String userData = searchDniInExcel(senderId, text);
+                                whatsAppService.sendTextMessage(senderId, userData);
+                                isFirstMessage.put(senderId, false);
+                            }
+                        }
+                    }
                 } else {
-                    // Si el usuario no está registrado, proceder como antes
+                    // Si el usuario no está registrado, verificar si es el primer mensaje
                     if (!isFirstMessage.containsKey(senderId)) {
                         isFirstMessage.put(senderId, true);
                         sendWelcomeMessage(senderId);
@@ -85,13 +120,12 @@ public class WebhookController {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }
-
     private void processMessage(String senderId, WhatsAppWebhookInboundMessage message) throws IOException {
         String messageType = String.valueOf(message.getType());
         if (messageType.equals("TEXT")) {
             WhatsAppWebhookInboundTextMessage textMessage = (WhatsAppWebhookInboundTextMessage) message;
             String text = textMessage.getText();
-            if (isFirstMessage.get(senderId)) {
+            if (isFirstMessage.containsKey(senderId) && isFirstMessage.get(senderId)) {
                 String userData = searchDniInExcel(senderId, text);
                 whatsAppService.sendTextMessage(senderId, userData);
                 isFirstMessage.put(senderId, false);
@@ -119,7 +153,6 @@ public class WebhookController {
         }
     }
 
-
     private void sendWelcomeMessage(String senderId) {
         // Envía un mensaje de bienvenida y solicita el DNI
         String welcomeMessage = "¡Bienvenido! Por favor, ingresa tu DNI:";
@@ -134,9 +167,12 @@ public class WebhookController {
                     // Si encuentra el DNI, devuelve una cadena de texto con los datos relacionados
                     String name = row.get(0) + " " + row.get(1);
                     saveRelation(senderId, dni, name); // Guardar relación en la base de datos
-                    return "Hola " + name + ", es un gusto que te comuniques con nosotros. ¿En qué podemos ayudarte?";
+                    String userData = "Hola " + name + ", es un gusto que te comuniques con nosotros. ¿En qué podemos ayudarte?";
+                    System.out.println("Se ingreso a reconcer al usuario: " + userData);
+                    return userData;
                 }
             }
+            System.out.println("No se encontró el DNI en el Excel. DNI: " + dni);
         } catch (IOException | GeneralSecurityException e) {
             e.printStackTrace();
         }
@@ -144,11 +180,13 @@ public class WebhookController {
     }
 
     private void saveRelation(String senderId, String dni, String name) {
-        // Guardar la relación en la base de datos
         Relation relation = new Relation();
         relation.setUserId(senderId);
         relation.setDni(Integer.parseInt(dni));
         relation.setName(name);
+        relation.setExpirationTime(LocalDateTime.now().plusMinutes(5));
+        relation.setActive(true);
+        relation.setLastInteractionTime(LocalDateTime.now());
         relationRepository.save(relation);
     }
 }
