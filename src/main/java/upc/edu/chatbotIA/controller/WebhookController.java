@@ -93,15 +93,6 @@ public class WebhookController {
                         if (!isFirstMessage.containsKey(senderId)) {
                             isFirstMessage.put(senderId, true);
                             sendWelcomeMessage(senderId);
-                        } else {
-                            WhatsAppWebhookInboundMessage message = messageData.getMessage();
-                            if (message.getType().equals("TEXT")) {
-                                WhatsAppWebhookInboundTextMessage textMessage = (WhatsAppWebhookInboundTextMessage) message;
-                                String text = textMessage.getText();
-                                String userData = searchDniInExcel(senderId, text);
-                                whatsAppService.sendTextMessage(senderId, userData);
-                                isFirstMessage.put(senderId, false);
-                            }
                         }
                     }
                 } else {
@@ -119,11 +110,17 @@ public class WebhookController {
                                 String userData = searchDniInExcel(senderId, text);
                                 if (userData.equals("Vemos que no eres cliente nuestro. Podrias por favor brindarnos tu nombre para continuar con tu consulta.")) {
                                     whatsAppService.sendTextMessage(senderId, userData);
+                                    isFirstMessage.put(senderId, false);
                                     saveRelation(senderId, text, "", false); // Guardar la relación con el DNI proporcionado
-                                } else {
+                                } else if (userData.equals("El DNI ingresado no es válido. Por favor, ingresa un número de DNI de 8 dígitos.")) {
                                     whatsAppService.sendTextMessage(senderId, userData);
+                                    // Mantener el estado de primer mensaje para volver a solicitar el DNI
+                                    isFirstMessage.put(senderId, true);
                                 }
-                                isFirstMessage.put(senderId, false);
+                                else {
+                                    whatsAppService.sendTextMessage(senderId, userData);
+                                    isFirstMessage.put(senderId, false);
+                                }
                             } else {
                                 Optional<Relation> relationToUpdate = relationRepository.findByUserId(senderId);
                                 if (relationToUpdate.isPresent()) {
@@ -152,8 +149,14 @@ public class WebhookController {
             String text = textMessage.getText();
             if (isFirstMessage.containsKey(senderId) && isFirstMessage.get(senderId)) {
                 String userData = searchDniInExcel(senderId, text);
-                whatsAppService.sendTextMessage(senderId, userData);
-                isFirstMessage.put(senderId, false);
+                if (userData.equals("El DNI ingresado no es válido. Por favor, ingresa un número de DNI de 8 dígitos.")) {
+                    whatsAppService.sendTextMessage(senderId, userData);
+                    // Mantener el estado de primer mensaje para volver a solicitar el DNI
+                    isFirstMessage.put(senderId, true);
+                } else {
+                    whatsAppService.sendTextMessage(senderId, userData);
+                    isFirstMessage.put(senderId, false);
+                }
             } else {
                 ChatMessage chatMessage = chatGptService.getChatCompletion(senderId, text);
                 String responseText = chatMessage.getContent();
@@ -186,6 +189,10 @@ public class WebhookController {
 
     private String searchDniInExcel(String senderId, String dni) {
         try {
+            if (!dni.matches("\\d{8}")) {
+                return "El DNI ingresado no es válido. Por favor, ingresa un número de DNI de 8 dígitos.";
+            }
+
             List<List<Object>> excelData = sheetsService.connectToGoogleSheets(); // Obtener datos del Excel
             for (List<Object> row : excelData) {
                 if (row.size() > 2 && row.get(2) instanceof String && row.get(2).equals(dni)) {
