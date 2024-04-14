@@ -18,4 +18,5 @@ public class Relation {
     private LocalDateTime expirationTime;
     private LocalDateTime lastInteractionTime;
     private Boolean active;
+    private Boolean client;
 }
