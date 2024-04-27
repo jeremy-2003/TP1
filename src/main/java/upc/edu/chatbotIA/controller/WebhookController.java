@@ -20,12 +20,10 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
+import upc.edu.chatbotIA.model.BlockedUser;
 import upc.edu.chatbotIA.model.Relation;
 import upc.edu.chatbotIA.repository.RelationRepository;
-import upc.edu.chatbotIA.service.ChatGptService;
-import upc.edu.chatbotIA.service.SheetsService;
-import upc.edu.chatbotIA.service.TranscriptionService;
-import upc.edu.chatbotIA.service.WhatsAppService;
+import upc.edu.chatbotIA.service.*;
 import upc.edu.chatbotIA.util.AudioDownloader;
 
 @RestController
@@ -39,11 +37,12 @@ public class WebhookController {
     private final SheetsService sheetsService;
 
     private final RelationRepository relationRepository;
+    private final BlockedUserService blockedUserService;
 
     @Autowired
     public WebhookController(ObjectMapper objectMapper, AudioDownloader audioDownloader,
                              TranscriptionService transcriptionService, ChatGptService chatGptService, WhatsAppService whatsAppService,
-                             SheetsService sheetsService, RelationRepository relationRepository) {
+                             SheetsService sheetsService, RelationRepository relationRepository, BlockedUserService blockedUserService) {
         this.objectMapper = objectMapper;
         this.audioDownloader = audioDownloader;
         this.transcriptionService = transcriptionService;
@@ -51,19 +50,30 @@ public class WebhookController {
         this.whatsAppService = whatsAppService;
         this.sheetsService = sheetsService;
         this.relationRepository = relationRepository;
-
+        this.blockedUserService = blockedUserService;
     }
-
+    private final Map<String, Integer> failedAttempts = new HashMap<>();
     private Map<String, Boolean> isFirstMessage = new HashMap<>();
 
     @PostMapping("/incoming-whatsapp")
     public ResponseEntity<Void> receiveWhatsApp(@RequestBody String requestBody) {
+        System.out.println("Ingreso a capturar el mensaje");
         try {
             WhatsAppWebhookInboundMessageResult messages = objectMapper.readValue(requestBody,
                     WhatsAppWebhookInboundMessageResult.class);
             for (WhatsAppWebhookInboundMessageData messageData : messages.getResults()) {
                 String senderId = messageData.getFrom();
                 Optional<Relation> existingRelation = relationRepository.findByUserId(senderId);
+                if (blockedUserService.isUserBlocked(senderId)) {
+                    whatsAppService.sendTextMessage(senderId, "Estás temporalmente bloqueado. Por favor, espera unos minutos antes de intentar enviar mensajes nuevamente.");
+                    return ResponseEntity.ok().build();
+                }
+                BlockedUser blockedUser = blockedUserService.findByUserId(senderId);
+                if (blockedUser != null && blockedUser.getBlockTime().isBefore(LocalDateTime.now())) {
+                    // El usuario ha sido desbloqueado, establece isFirstMessage a true
+                    blockedUserService.unblockUser(blockedUser.getUserId()); // Elimina el registro del usuario bloqueado
+                    isFirstMessage.remove(senderId);
+                }
                 if (existingRelation.isPresent() && !Objects.equals(existingRelation.get().getName(), "")) {
                     Relation relation = existingRelation.get();
                     LocalDateTime now = LocalDateTime.now();
@@ -190,6 +200,23 @@ public class WebhookController {
     private String searchDniInExcel(String senderId, String dni) {
         try {
             if (!dni.matches("\\d{8}")) {
+                // Incrementar el contador de intentos fallidos para este remitente
+                int attempts = failedAttempts.getOrDefault(senderId, 0) + 1;
+                failedAttempts.put(senderId, attempts);
+
+                // Verificar si se supera el límite de intentos fallidos
+                if (attempts >= 3) {
+                    // Bloquear al usuario por 5 minutos
+                    blockedUserService.blockUser(senderId);
+
+                    // Reiniciar el contador de intentos fallidos
+                    failedAttempts.remove(senderId);
+
+                    // Enviar mensaje de bloqueo al usuario
+                    return "Has sido bloqueado temporalmente debido a múltiples intentos fallidos. Por favor, intenta nuevamente más tarde.";
+                }
+
+                // Mensaje de DNI inválido
                 return "El DNI ingresado no es válido. Por favor, ingresa un número de DNI de 8 dígitos.";
             }
 
