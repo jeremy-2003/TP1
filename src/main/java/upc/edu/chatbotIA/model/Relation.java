@@ -12,7 +12,7 @@ import java.time.LocalDateTime;
 public class Relation {
     @Id
     private Long id;
-    private String userId;
+    private String userNumber;
     private Integer dni;
     private String name;
     private LocalDateTime expirationTime;

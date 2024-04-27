@@ -6,5 +6,5 @@ import upc.edu.chatbotIA.model.BlockedUser;
 
 @Repository
 public interface BlockedUserRepository extends CrudRepository<BlockedUser, String> {
-    BlockedUser findByUserId(String userId);
+    BlockedUser findByUserNumber(String userNumber);
 }

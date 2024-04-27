@@ -8,7 +8,7 @@ import java.util.List;
 import java.util.Optional;
 
 public interface RelationRepository extends CrudRepository<Relation, Long> {
-    Optional<Relation> findByUserId(String userId);
+    Optional<Relation> findByUserNumber(String userId);
     List<Relation> findByLastInteractionTimeBefore(LocalDateTime threshold);
 
 }

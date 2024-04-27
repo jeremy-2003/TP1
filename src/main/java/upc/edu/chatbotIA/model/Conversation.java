@@ -12,7 +12,7 @@ public class Conversation {
 
     @Id
     private Long id;
-    private String userId;
+    private String userNumber;
     private String prompt;
     private String response;
     private LocalDateTime timestamp;

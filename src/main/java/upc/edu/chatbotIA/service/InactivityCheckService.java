@@ -25,7 +25,7 @@ public class InactivityCheckService {
 
         for (Relation relation : inactiveRelations) {
             if (relation.getActive()) {
-                sendInactivityMessage(relation.getUserId());
+                sendInactivityMessage(relation.getUserNumber());
                 relation.setActive(false);
                 relationRepository.save(relation);
             }

@@ -9,8 +9,8 @@ import java.util.List;
 
 public interface ConversationRepository extends CrudRepository<Conversation, Long> {
 
-    @Query("SELECT * FROM conversation WHERE user_id = :userId ORDER BY timestamp ASC")
-    List<Conversation> findByUserIdOrderByTimestampAsc(@Param("userId") String userId);
+    @Query("SELECT * FROM conversation WHERE user_number = :userNumber ORDER BY timestamp ASC")
+    List<Conversation> findByUserNumberOrderByTimestampAsc(@Param("userNumber") String userNumber);
 
     // Puedes agregar más métodos de consulta personalizados aquí si es necesario
 }

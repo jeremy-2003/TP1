@@ -26,7 +26,7 @@ public class ChatGptService {
 
     public ChatMessage getChatCompletion(String userId, String userMessage) {
         // Recuperar las conversaciones anteriores del usuario
-        List<Conversation> previousConversations = conversationRepository.findByUserIdOrderByTimestampAsc(userId);
+        List<Conversation> previousConversations = conversationRepository.findByUserNumberOrderByTimestampAsc(userId);
         ChatMessage systemMessage = new ChatMessage();
         // Construir la lista de mensajes de chat incluyendo el historial de conversación
         List<ChatMessage> chatMessages = new ArrayList<>();
@@ -56,7 +56,7 @@ public class ChatGptService {
 
         // Guardar la conversación en la base de datos
         Conversation conversation = new Conversation();
-        conversation.setUserId(userId);
+        conversation.setUserNumber(userId);
         conversation.setPrompt(userMessage);
         conversation.setResponse(assistantMessage.getContent());
         conversation.setTimestamp(LocalDateTime.now());

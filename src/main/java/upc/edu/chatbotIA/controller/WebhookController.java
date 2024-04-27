@@ -28,7 +28,7 @@ import upc.edu.chatbotIA.util.AudioDownloader;
 
 @RestController
 public class WebhookController {
-
+    private RelationAdviserCustomerService relationAdviserCustomerService;
     private final ObjectMapper objectMapper;
     private final AudioDownloader audioDownloader;
     private final TranscriptionService transcriptionService;
@@ -42,7 +42,8 @@ public class WebhookController {
     @Autowired
     public WebhookController(ObjectMapper objectMapper, AudioDownloader audioDownloader,
                              TranscriptionService transcriptionService, ChatGptService chatGptService, WhatsAppService whatsAppService,
-                             SheetsService sheetsService, RelationRepository relationRepository, BlockedUserService blockedUserService) {
+                             SheetsService sheetsService, RelationRepository relationRepository, BlockedUserService blockedUserService,
+                             RelationAdviserCustomerService relationAdviserCustomerService) {
         this.objectMapper = objectMapper;
         this.audioDownloader = audioDownloader;
         this.transcriptionService = transcriptionService;
@@ -51,6 +52,7 @@ public class WebhookController {
         this.sheetsService = sheetsService;
         this.relationRepository = relationRepository;
         this.blockedUserService = blockedUserService;
+        this.relationAdviserCustomerService = relationAdviserCustomerService;
     }
     private final Map<String, Integer> failedAttempts = new HashMap<>();
     private Map<String, Boolean> isFirstMessage = new HashMap<>();
@@ -63,7 +65,7 @@ public class WebhookController {
                     WhatsAppWebhookInboundMessageResult.class);
             for (WhatsAppWebhookInboundMessageData messageData : messages.getResults()) {
                 String senderId = messageData.getFrom();
-                Optional<Relation> existingRelation = relationRepository.findByUserId(senderId);
+                Optional<Relation> existingRelation = relationRepository.findByUserNumber(senderId);
                 if (blockedUserService.isUserBlocked(senderId)) {
                     whatsAppService.sendTextMessage(senderId, "Estás temporalmente bloqueado. Por favor, espera unos minutos antes de intentar enviar mensajes nuevamente.");
                     return ResponseEntity.ok().build();
@@ -71,7 +73,7 @@ public class WebhookController {
                 BlockedUser blockedUser = blockedUserService.findByUserId(senderId);
                 if (blockedUser != null && blockedUser.getBlockTime().isBefore(LocalDateTime.now())) {
                     // El usuario ha sido desbloqueado, establece isFirstMessage a true
-                    blockedUserService.unblockUser(blockedUser.getUserId()); // Elimina el registro del usuario bloqueado
+                    blockedUserService.unblockUser(blockedUser.getUserNumber()); // Elimina el registro del usuario bloqueado
                     isFirstMessage.remove(senderId);
                 }
                 if (existingRelation.isPresent() && !Objects.equals(existingRelation.get().getName(), "")) {
@@ -132,7 +134,7 @@ public class WebhookController {
                                     isFirstMessage.put(senderId, false);
                                 }
                             } else {
-                                Optional<Relation> relationToUpdate = relationRepository.findByUserId(senderId);
+                                Optional<Relation> relationToUpdate = relationRepository.findByUserNumber(senderId);
                                 if (relationToUpdate.isPresent()) {
                                     Relation relation = relationToUpdate.get();
                                     relation.setName(text);
@@ -168,6 +170,24 @@ public class WebhookController {
                     isFirstMessage.put(senderId, false);
                 }
             } else {
+                String textasesor = textMessage.getText().toUpperCase();
+                if (textasesor.equals("ASESOR")) {
+                    Optional<String> asesorDisponible = relationAdviserCustomerService.buscarAsesorDisponible();
+                    System.out.println("Asesor disponible: " + asesorDisponible);
+                    if (asesorDisponible.isPresent()) {
+                        String asesorNumber = asesorDisponible.get();
+                        whatsAppService.sendTextMessage(asesorNumber, "Atención: El usuario " + senderId + " ha solicitado un asesor.");
+                        //guardarRelacionAsesorCliente(senderId, asesorNumber);
+
+                        // Desactivar el procesamiento de mensajes para este usuario y marcar que está esperando al asesor
+                        isFirstMessage.put(senderId, false);
+                        //isWaitingForAdvisor.put(senderId, true);
+                    } else {
+                        whatsAppService.sendTextMessage(senderId, "Lo sentimos, no hay asesores disponibles en este momento. Por favor, intente más tarde.");
+                    }
+
+                    return;
+                }
                 ChatMessage chatMessage = chatGptService.getChatCompletion(senderId, text);
                 String responseText = chatMessage.getContent();
                 whatsAppService.sendTextMessage(senderId, responseText);
@@ -200,30 +220,21 @@ public class WebhookController {
     private String searchDniInExcel(String senderId, String dni) {
         try {
             if (!dni.matches("\\d{8}")) {
-                // Incrementar el contador de intentos fallidos para este remitente
                 int attempts = failedAttempts.getOrDefault(senderId, 0) + 1;
                 failedAttempts.put(senderId, attempts);
 
                 // Verificar si se supera el límite de intentos fallidos
                 if (attempts >= 3) {
-                    // Bloquear al usuario por 5 minutos
                     blockedUserService.blockUser(senderId);
-
-                    // Reiniciar el contador de intentos fallidos
                     failedAttempts.remove(senderId);
-
-                    // Enviar mensaje de bloqueo al usuario
                     return "Has sido bloqueado temporalmente debido a múltiples intentos fallidos. Por favor, intenta nuevamente más tarde.";
                 }
-
-                // Mensaje de DNI inválido
                 return "El DNI ingresado no es válido. Por favor, ingresa un número de DNI de 8 dígitos.";
             }
 
-            List<List<Object>> excelData = sheetsService.connectToGoogleSheets(); // Obtener datos del Excel
+            List<List<Object>> excelData = sheetsService.connectToGoogleSheets();
             for (List<Object> row : excelData) {
                 if (row.size() > 2 && row.get(2) instanceof String && row.get(2).equals(dni)) {
-                    // Si encuentra el DNI, devuelve una cadena de texto con los datos relacionados
                     String name = row.get(0) + " " + row.get(1);
                     saveRelation(senderId, dni, name, true); // Guardar relación en la base de datos
                     String userData = "Hola " + name + ", es un gusto que te comuniques con nosotros. ¿En qué podemos ayudarte?";
@@ -240,7 +251,7 @@ public class WebhookController {
 
     private void saveRelation(String senderId, String dni, String name, Boolean client) {
         Relation relation = new Relation();
-        relation.setUserId(senderId);
+        relation.setUserNumber(senderId);
         relation.setDni(Integer.parseInt(dni));
         relation.setName(name);
         relation.setExpirationTime(LocalDateTime.now().plusMinutes(5));

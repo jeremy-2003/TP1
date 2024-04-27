@@ -1,16 +1,14 @@
 package upc.edu.chatbotIA.model;
-
-import java.time.LocalDateTime;
 import lombok.Getter;
 import lombok.Setter;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.relational.core.mapping.Table;
-@Table("blocked_user")
+@Table("adviser")
 @Getter
 @Setter
-public class BlockedUser {
+public class Adviser {
     @Id
     private Long id;
-    private String userNumber;
-    private LocalDateTime blockTime;
+    private String adviserNumber;
+    private String name;
 }

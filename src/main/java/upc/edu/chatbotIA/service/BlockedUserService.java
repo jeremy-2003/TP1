@@ -17,7 +17,7 @@ public class BlockedUserService {
     }
 
     public boolean isUserBlocked(String userId) {
-        BlockedUser blockedUser = blockedUserRepository.findByUserId(userId);
+        BlockedUser blockedUser = blockedUserRepository.findByUserNumber(userId);
         if (blockedUser != null && blockedUser.getBlockTime().isAfter(LocalDateTime.now())) {
             return true;
         }
@@ -26,18 +26,18 @@ public class BlockedUserService {
 
     public void blockUser(String userId) {
         BlockedUser blockedUser = new BlockedUser();
-        blockedUser.setUserId(userId);
+        blockedUser.setUserNumber(userId);
         blockedUser.setBlockTime(LocalDateTime.now().plusMinutes(2));
-        System.out.println("Esto se guardara" + blockedUser.getUserId() + ", " + blockedUser.getBlockTime());
+        System.out.println("Esto se guardara" + blockedUser.getUserNumber() + ", " + blockedUser.getBlockTime());
         blockedUserRepository.save(blockedUser);
     }
 
     public BlockedUser findByUserId(String userId){
-        return blockedUserRepository.findByUserId(userId);
+        return blockedUserRepository.findByUserNumber(userId);
     }
 
     public void unblockUser(String userId) {
-        BlockedUser blockedUser = blockedUserRepository.findByUserId(userId);
+        BlockedUser blockedUser = blockedUserRepository.findByUserNumber(userId);
         if (blockedUser != null) {
             blockedUserRepository.delete(blockedUser);
         }
