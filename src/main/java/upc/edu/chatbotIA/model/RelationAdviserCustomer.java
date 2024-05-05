@@ -6,7 +6,7 @@ import org.springframework.data.relational.core.mapping.Table;
 
 import java.time.LocalDateTime;
 
-@Table(" ")
+@Table("relation_adviser_customer")
 @Getter
 @Setter
 public class RelationAdviserCustomer {

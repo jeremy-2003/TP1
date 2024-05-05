@@ -44,4 +44,12 @@ public class RelationAdviserCustomerService {
         // Devolver el primer asesor disponible, si existe
         return asesoresDisponibles.isEmpty() ? Optional.empty() : Optional.of(asesoresDisponibles.get(0));
     }
+
+    public void guardarRelacion(RelationAdviserCustomer relacionAsesorCustomer) {
+        relationAdviserCustomerRepository.save(relacionAsesorCustomer);
+    }
+
+    public RelationAdviserCustomer encontrarConversacionesActivas(String userNumber, boolean statusActive){
+        return relationAdviserCustomerRepository.findByUserNumberAndActive(userNumber, statusActive);
+    }
 }

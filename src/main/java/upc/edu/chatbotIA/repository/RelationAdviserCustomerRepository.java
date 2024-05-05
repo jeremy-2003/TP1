@@ -7,7 +7,7 @@ import upc.edu.chatbotIA.model.RelationAdviserCustomer;
 import java.util.List;
 
 public interface RelationAdviserCustomerRepository extends CrudRepository<RelationAdviserCustomer, Long> {
-    List<RelationAdviserCustomer> findByAdviserNumberAndActive(String adviserNumber, boolean active);
+    RelationAdviserCustomer findByUserNumberAndActive(String userNumber, Boolean active);
     List<RelationAdviserCustomer> findByActive(boolean active);
 
 }
