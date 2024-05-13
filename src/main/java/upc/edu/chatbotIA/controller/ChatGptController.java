@@ -11,7 +11,7 @@ import upc.edu.chatbotIA.dto.ChatRequest;
 import upc.edu.chatbotIA.dto.ChatResponse;
 import upc.edu.chatbotIA.service.ChatGptService;
 
-@RestController
+@RestController("/openai")
 public class ChatGptController {
 
     private final ChatGptService chatGptService;

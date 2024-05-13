@@ -27,7 +27,7 @@ import upc.edu.chatbotIA.repository.RelationRepository;
 import upc.edu.chatbotIA.service.*;
 import upc.edu.chatbotIA.util.AudioDownloader;
 
-@RestController
+@RestController("/webhook")
 public class WebhookController {
     private final RelationAdviserCustomerService relationAdviserCustomerService;
     private final ObjectMapper objectMapper;
