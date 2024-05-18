@@ -27,7 +27,7 @@ public class ChatGptController {
             @RequestBody ChatRequest chatRequest
     ) {
         String userMessage = chatRequest.getMessage();
-        ChatMessage assistantMessage = chatGptService.getChatCompletion(userId, userMessage);
+        ChatMessage assistantMessage = chatGptService.getChatCompletion(userId, userMessage, "");
 
         ChatResponse chatResponse = new ChatResponse();
         chatResponse.setMessage(assistantMessage.getContent());

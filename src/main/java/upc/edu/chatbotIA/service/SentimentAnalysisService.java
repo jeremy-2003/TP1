@@ -7,10 +7,12 @@ import org.springframework.stereotype.Service;
 import com.google.gson.JsonObject;
 import upc.edu.chatbotIA.model.EmotionsDictionary;
 
+import javax.json.*;
+import java.io.StringReader;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
-import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -49,6 +51,47 @@ public class SentimentAnalysisService {
     }
 
 
+    public String analyzeTextAndSaveEmotions(String message) throws IOException, InterruptedException {
+        ChatMessage assistantMessage = analyzeTextWithOpenAi(message);
+        String contentJsonString = assistantMessage.getContent();
+        JsonReader reader = Json.createReader(new StringReader(contentJsonString));
+        javax.json.JsonObject contentJsonObject = reader.readObject();
+        String emocionPredominante = contentJsonObject.getString("emocion_predominante");
+        JsonArray palabrasRelacionadas = contentJsonObject.getJsonArray("palabras_relacionadas");
+
+        if (palabrasRelacionadas == null) {
+            palabrasRelacionadas = Json.createArrayBuilder().build();
+        }
+
+        // Verify if the emotion already exists in the database
+        EmotionsDictionary existingEmotionsDictionary = emotionsDictionaryService.findByEmotion(emocionPredominante);
+        if (existingEmotionsDictionary != null) {
+            // If the emotion already exists, update wordRelation
+            String existingWordRelation = existingEmotionsDictionary.getWordRelation();
+            String updatedWordRelation = existingWordRelation + ", " + palabrasRelacionadas.toString();
+            existingEmotionsDictionary.setWordRelation(updatedWordRelation);
+            emotionsDictionaryService.save(existingEmotionsDictionary);
+        } else {
+            // If the emotion doesn't exist, create a new entry
+            EmotionsDictionary newEmotionsDictionary = new EmotionsDictionary();
+            newEmotionsDictionary.setEmotion(emocionPredominante);
+            newEmotionsDictionary.setWordRelation(palabrasRelacionadas.toString());
+            emotionsDictionaryService.save(newEmotionsDictionary);
+        }
+
+        JsonObjectBuilder nuevoJsonObjectBuilder = Json.createObjectBuilder();
+        nuevoJsonObjectBuilder.add("emocion_predominante", emocionPredominante);
+        JsonArrayBuilder nuevasPalabrasRelacionadasBuilder = Json.createArrayBuilder();
+        for (int i = 0; i < palabrasRelacionadas.size(); i++) {
+            nuevasPalabrasRelacionadasBuilder.add(Json.createObjectBuilder()
+                    .add("value", palabrasRelacionadas.getString(i)));
+        }
+        nuevoJsonObjectBuilder.add("palabras_relacionadas", nuevasPalabrasRelacionadasBuilder);
+        javax.json.JsonObject nuevoJsonObject = nuevoJsonObjectBuilder.build();
+
+        return nuevoJsonObject.toString();
+    }
+
     public ChatMessage analyzeTextWithOpenAi(String message) throws IOException, InterruptedException {
         String analyzeText = analyzeText(message);
 
@@ -63,7 +106,7 @@ public class SentimentAnalysisService {
                     .append("\n");
         }
 
-        String prompt = "Por favor, analiza el siguiente mensaje y determina la emoción predominante, así como cualquier palabra o frase relacionada." +
+        String prompt = "Por favor, te encargaras de analizar los mensajes enviados por los clientes y determinar la emoción predominante, así como cualquier palabra o frase relacionada." +
                 "\n\n[OBLIGATORIO]" +
                 "\n- Evita dar como emoción 'Negativo' o 'Positivo'. En su lugar, proporciona emociones más específicas y descriptivas." +
                 "\n- Las palabras o frases relacionadas deben estar presentes en el mensaje original." +
@@ -90,5 +133,6 @@ public class SentimentAnalysisService {
         ChatMessage assistantMessage = openAiService.createChatCompletion(completionRequest).getChoices().get(0).getMessage();
         return assistantMessage;
     }
+
 
 }

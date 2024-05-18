@@ -27,6 +27,9 @@ import upc.edu.chatbotIA.repository.RelationRepository;
 import upc.edu.chatbotIA.service.*;
 import upc.edu.chatbotIA.util.AudioDownloader;
 
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+
 @RestController("/webhook")
 public class WebhookController {
     private final RelationAdviserCustomerService relationAdviserCustomerService;
@@ -36,6 +39,7 @@ public class WebhookController {
     private final ChatGptService chatGptService;
     private final WhatsAppService whatsAppService;
     private final SheetsService sheetsService;
+    private final SentimentAnalysisService sentimentAnalysisService;
 
     private final RelationRepository relationRepository;
     private final BlockedUserService blockedUserService;
@@ -44,7 +48,7 @@ public class WebhookController {
     public WebhookController(ObjectMapper objectMapper, AudioDownloader audioDownloader,
                              TranscriptionService transcriptionService, ChatGptService chatGptService, WhatsAppService whatsAppService,
                              SheetsService sheetsService, RelationRepository relationRepository, BlockedUserService blockedUserService,
-                             RelationAdviserCustomerService relationAdviserCustomerService) {
+                             RelationAdviserCustomerService relationAdviserCustomerService, SentimentAnalysisService sentimentAnalysisService) {
         this.objectMapper = objectMapper;
         this.audioDownloader = audioDownloader;
         this.transcriptionService = transcriptionService;
@@ -54,6 +58,7 @@ public class WebhookController {
         this.relationRepository = relationRepository;
         this.blockedUserService = blockedUserService;
         this.relationAdviserCustomerService = relationAdviserCustomerService;
+        this.sentimentAnalysisService = sentimentAnalysisService;
     }
     private final Map<String, Integer> failedAttempts = new HashMap<>();
     private Map<String, Boolean> isFirstMessage = new HashMap<>();
@@ -151,12 +156,12 @@ public class WebhookController {
                 }
             }
             return ResponseEntity.ok().build();
-        } catch (IOException e) {
+        } catch (IOException | InterruptedException e) {
             e.printStackTrace();
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }
-    private void processMessage(String senderId, WhatsAppWebhookInboundMessage message) throws IOException {
+    private void processMessage(String senderId, WhatsAppWebhookInboundMessage message) throws IOException, InterruptedException {
         String messageType = String.valueOf(message.getType());
         if (messageType.equals("TEXT")) {
             WhatsAppWebhookInboundTextMessage textMessage = (WhatsAppWebhookInboundTextMessage) message;
@@ -196,7 +201,11 @@ public class WebhookController {
                             whatsAppService.sendTextMessage(senderId, "Lo sentimos, no hay asesores disponibles en este momento. Por favor, intente más tarde.");
                         }
                     } else {
-                        ChatMessage chatMessage = chatGptService.getChatCompletion(senderId, text);
+                        String analyzedResponse = sentimentAnalysisService.analyzeTextAndSaveEmotions(text);
+                        JsonObject jsonObject = JsonParser.parseString(analyzedResponse).getAsJsonObject();
+                        String emotion = jsonObject.get("emocion_predominante").getAsString();
+
+                        ChatMessage chatMessage = chatGptService.getChatCompletion(senderId, text, emotion);
                         String responseText = chatMessage.getContent();
                         whatsAppService.sendTextMessage(senderId, responseText);
                     }
@@ -211,11 +220,10 @@ public class WebhookController {
             File mp3File = audioDownloader.downloadAudio(voiceUrl);
             // Transcribir el audio a texto
             String transcription = transcriptionService.transcribeAudio(mp3File);
-            ChatMessage chatMessage = chatGptService.getChatCompletion(senderId, transcription);
+            System.out.println("Transcription: " + transcription);
+            ChatMessage chatMessage = chatGptService.getChatCompletion(senderId, transcription, "");
             String responseText = chatMessage.getContent();
             whatsAppService.sendTextMessage(senderId, responseText);
-            System.out.println("Transcription: " + transcription);
-            chatGptService.getChatCompletion(senderId, transcription);
         } else {
             System.out.println("Unsupported message type: " + messageType);
         }
