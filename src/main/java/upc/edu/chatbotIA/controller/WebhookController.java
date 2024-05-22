@@ -43,12 +43,19 @@ public class WebhookController {
 
     private final RelationRepository relationRepository;
     private final BlockedUserService blockedUserService;
+    private final FeedbackService feedbackService;
+
+    private final Map<String, Boolean> isWaitingForFeedback = new HashMap<>();
+    private final Map<String, Integer> feedbackRating = new HashMap<>();
+    private final Map<String, String> feedbackComment = new HashMap<>();
+    private Map<String, List<String>> userMessages = new HashMap<>();
 
     @Autowired
     public WebhookController(ObjectMapper objectMapper, AudioDownloader audioDownloader,
                              TranscriptionService transcriptionService, ChatGptService chatGptService, WhatsAppService whatsAppService,
                              SheetsService sheetsService, RelationRepository relationRepository, BlockedUserService blockedUserService,
-                             RelationAdviserCustomerService relationAdviserCustomerService, SentimentAnalysisService sentimentAnalysisService) {
+                             RelationAdviserCustomerService relationAdviserCustomerService, SentimentAnalysisService sentimentAnalysisService,
+                             FeedbackService feedbackService) {
         this.objectMapper = objectMapper;
         this.audioDownloader = audioDownloader;
         this.transcriptionService = transcriptionService;
@@ -59,6 +66,7 @@ public class WebhookController {
         this.blockedUserService = blockedUserService;
         this.relationAdviserCustomerService = relationAdviserCustomerService;
         this.sentimentAnalysisService = sentimentAnalysisService;
+        this.feedbackService = feedbackService;
     }
     private final Map<String, Integer> failedAttempts = new HashMap<>();
     private Map<String, Boolean> isFirstMessage = new HashMap<>();
@@ -117,6 +125,7 @@ public class WebhookController {
                 } else {
                     // Si el usuario no está registrado, verificar si es el primer mensaje
                     if (!isFirstMessage.containsKey(senderId)) {
+                        System.out.println(messageData.getMessage());
                         isFirstMessage.put(senderId, true);
                         sendWelcomeMessage(senderId);
                     } else {
@@ -182,7 +191,7 @@ public class WebhookController {
                 System.out.println("Se encontro: " +  relacionAsesorCliente + "semnderid: " +  senderId);
                 if (relacionAsesorCliente != null) {
                     // Reenviar el mensaje al asesor
-                    whatsAppService.sendTextMessage(relacionAsesorCliente.getAdviserNumber(), "Mensaje del usuario " + senderId + ": " + text);
+                    //whatsAppService.sendTextMessage(relacionAsesorCliente.getAdviserNumber(), "Mensaje del usuario " + senderId + ": " + text); //por ahora no se reenvia
                 } else {
                     String textasesor = textMessage.getText().toUpperCase();
                     if (textasesor.equals("ASESOR")) {
@@ -190,7 +199,12 @@ public class WebhookController {
                         System.out.println("Asesor disponible: " + asesorDisponible);
                         if (asesorDisponible.isPresent()) {
                             String asesorNumber = asesorDisponible.get();
-                            whatsAppService.sendTextMessage(asesorNumber, "Atención: El usuario " + senderId + " ha solicitado un asesor.");
+                            String conversationSummary = chatGptService.generateConversationSummary(senderId);
+                            String customerName = getCustomerName(senderId);
+                            String messageToAdvisor = "Atención: El cliente " + customerName + " (Número de celular: " + senderId + ") ha solicitado un asesor.\n\n" +
+                                    "Resumen de la conversación:\n" + conversationSummary;
+                            whatsAppService.sendTextMessage(asesorNumber, messageToAdvisor);
+
                             System.out.println("Se asigno al usuario " + senderId + " el asesor  con numero " + asesorNumber);
                             guardarRelacionAsesorCliente(senderId, asesorNumber);
 
@@ -201,6 +215,12 @@ public class WebhookController {
                             whatsAppService.sendTextMessage(senderId, "Lo sentimos, no hay asesores disponibles en este momento. Por favor, intente más tarde.");
                         }
                     } else {
+                        // Guardar el mensaje del cliente en la lista correspondiente
+                        if (!userMessages.containsKey(senderId)) {
+                            userMessages.put(senderId, new ArrayList<>());
+                        }
+                        userMessages.get(senderId).add(text);
+
                         String analyzedResponse = sentimentAnalysisService.analyzeTextAndSaveEmotions(text);
                         JsonObject jsonObject = JsonParser.parseString(analyzedResponse).getAsJsonObject();
                         String emotion = jsonObject.get("emocion_predominante").getAsString();
@@ -228,7 +248,6 @@ public class WebhookController {
             System.out.println("Unsupported message type: " + messageType);
         }
     }
-
     private void sendWelcomeMessage(String senderId) {
         // Envía un mensaje de bienvenida y solicita el DNI
         String welcomeMessage = "¡Bienvenido! Por favor, ingresa tu número de DNI:";
@@ -288,4 +307,14 @@ public class WebhookController {
         relacionAsesorCustomer.setActive(true);
         relationAdviserCustomerService.guardarRelacion(relacionAsesorCustomer);
     }
+
+    private String getCustomerName(String senderId) {
+        Optional<Relation> relationOptional = relationRepository.findByUserNumber(senderId);
+        if (relationOptional.isPresent()) {
+            Relation relation = relationOptional.get();
+            return relation.getName();
+        }
+        return "";
+    }
+
 }
