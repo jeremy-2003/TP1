@@ -20,9 +20,11 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
+import upc.edu.chatbotIA.model.Adviser;
 import upc.edu.chatbotIA.model.BlockedUser;
 import upc.edu.chatbotIA.model.Relation;
 import upc.edu.chatbotIA.model.RelationAdviserCustomer;
+import upc.edu.chatbotIA.repository.AdviserRepository;
 import upc.edu.chatbotIA.repository.RelationRepository;
 import upc.edu.chatbotIA.service.*;
 import upc.edu.chatbotIA.util.AudioDownloader;
@@ -43,6 +45,8 @@ public class WebhookController {
 
     private final RelationRepository relationRepository;
     private final BlockedUserService blockedUserService;
+    private final AdviserRepository adviserRepository;
+
     private final FeedbackService feedbackService;
 
     private final Map<String, Boolean> isWaitingForFeedback = new HashMap<>();
@@ -55,7 +59,7 @@ public class WebhookController {
                              TranscriptionService transcriptionService, ChatGptService chatGptService, WhatsAppService whatsAppService,
                              SheetsService sheetsService, RelationRepository relationRepository, BlockedUserService blockedUserService,
                              RelationAdviserCustomerService relationAdviserCustomerService, SentimentAnalysisService sentimentAnalysisService,
-                             FeedbackService feedbackService) {
+                             FeedbackService feedbackService, AdviserRepository adviserRepository) {
         this.objectMapper = objectMapper;
         this.audioDownloader = audioDownloader;
         this.transcriptionService = transcriptionService;
@@ -67,6 +71,7 @@ public class WebhookController {
         this.relationAdviserCustomerService = relationAdviserCustomerService;
         this.sentimentAnalysisService = sentimentAnalysisService;
         this.feedbackService = feedbackService;
+        this.adviserRepository = adviserRepository;
     }
     private final Map<String, Integer> failedAttempts = new HashMap<>();
     private Map<String, Boolean> isFirstMessage = new HashMap<>();
@@ -74,12 +79,58 @@ public class WebhookController {
 
     @PostMapping("/incoming-whatsapp")
     public ResponseEntity<Void> receiveWhatsApp(@RequestBody String requestBody) {
-        System.out.println("Ingreso a capturar el mensaje");
         try {
             WhatsAppWebhookInboundMessageResult messages = objectMapper.readValue(requestBody,
                     WhatsAppWebhookInboundMessageResult.class);
             for (WhatsAppWebhookInboundMessageData messageData : messages.getResults()) {
                 String senderId = messageData.getFrom();
+                // Verificar si el remitente es un asesor
+                String adviserMessage = null;
+                WhatsAppWebhookInboundMessage messageAdviser = messageData.getMessage();
+                String messageTypeAdviser = String.valueOf(messageAdviser.getType());
+                if (messageTypeAdviser.equals("TEXT")) {
+                    WhatsAppWebhookInboundTextMessage textMessage = (WhatsAppWebhookInboundTextMessage) messageData.getMessage();
+                    adviserMessage = textMessage.getText();
+                }
+                List<Adviser> advisers = adviserRepository.findAllAdviserNumbers();
+                for (Adviser adviser : advisers) {
+                    if (adviser.getAdviserNumber().equals(senderId)) {
+                        // Verificar si el asesor tiene una relación activa de atención
+                        RelationAdviserCustomer relacionAsesorCliente = relationAdviserCustomerService.encontrarConversacionesActivasAdviserNumber(senderId, true);
+                        if (relacionAsesorCliente != null) {
+                            if (adviserMessage != null && adviser.getAdviserNumber().equals(senderId) && adviserMessage.equalsIgnoreCase("FINALIZADO")) {
+                                String customerNumber = relacionAsesorCliente.getUserNumber();
+                                // Finalizar la relación entre el asesor y el cliente
+                                relationAdviserCustomerService.finalizarConversacion(relacionAsesorCliente);
+                                // Enviar mensaje al cliente indicando que está de vuelta con el chatbot
+                                String welcomeBackMessage = "Hola, soy TeleBuddy. Estás de vuelta conmigo. ¿En qué más puedo ayudarte?";
+                                whatsAppService.sendTextMessage(customerNumber, welcomeBackMessage);
+                                Relation relation = relationRepository.findByUserNumber(customerNumber).orElse(null);
+                                if (relation != null) {
+                                    LocalDateTime now = LocalDateTime.now();
+                                    relation.setLastInteractionTime(LocalDateTime.now());
+                                    LocalDateTime expirationThreshold = relation.getExpirationTime().minusDays(5); // Umbral de extensión de 5 días
+                                    if (relation.getLastInteractionTime().isAfter(expirationThreshold)) {
+                                        relation.setExpirationTime(now.plusDays(30)); // Extender la fecha de expiración por 30 días más
+                                    }
+                                    relationRepository.save(relation);
+                                }
+                                whatsAppService.sendTextMessage(senderId, "Has finalizado la conversación con el cliente de número" + customerNumber + " y nombre " + relation.getName());
+                                return ResponseEntity.ok().build();
+                            } else {
+                                // El asesor tiene una relación activa de atención
+                                String adviserMessage2 = "Tienes una conversación de atención activa. El único mensaje aceptado es 'FINALIZADO' para dar por culminada la atención.";
+                                whatsAppService.sendTextMessage(senderId, adviserMessage2);
+                                return ResponseEntity.ok().build();
+                            }
+                        } else {
+                            // El asesor no tiene una relación activa de atención
+                            String adviserMessage2 = "Eres un asistente de atención al cliente. Solo puedes utilizar este chat para recibir solicitudes para conectarse al chat con el cliente y cerrar los chats una vez terminada la atención.";
+                            whatsAppService.sendTextMessage(senderId, adviserMessage2);
+                            return ResponseEntity.ok().build();
+                        }
+                    }
+                }
                 Optional<Relation> existingRelation = relationRepository.findByUserNumber(senderId);
                 if (blockedUserService.isUserBlocked(senderId)) {
                     whatsAppService.sendTextMessage(senderId, "Estás temporalmente bloqueado. Por favor, espera unos minutos antes de intentar enviar mensajes nuevamente.");
@@ -96,7 +147,6 @@ public class WebhookController {
                     LocalDateTime now = LocalDateTime.now();
                     if (relation.getActive() && relation.getExpirationTime().isAfter(now)) {
                         // Si el usuario ya está registrado, la relación está activa y no ha expirado, procesar el mensaje normalmente
-                        System.out.println("Entró en este flujo 3ero");
                         isFirstMessage.remove(senderId);
                         processMessage(senderId, messageData.getMessage());
                         // Actualizar la marca de tiempo de interacción
@@ -125,7 +175,6 @@ public class WebhookController {
                 } else {
                     // Si el usuario no está registrado, verificar si es el primer mensaje
                     if (!isFirstMessage.containsKey(senderId)) {
-                        System.out.println(messageData.getMessage());
                         isFirstMessage.put(senderId, true);
                         sendWelcomeMessage(senderId);
                     } else {
@@ -188,7 +237,6 @@ public class WebhookController {
             } else {
                 // Verificar si el usuario tiene una relación activa con un asesor
                 RelationAdviserCustomer relacionAsesorCliente = relationAdviserCustomerService.encontrarConversacionesActivas(senderId, true);
-                System.out.println("Se encontro: " +  relacionAsesorCliente + "semnderid: " +  senderId);
                 if (relacionAsesorCliente != null) {
                     // Reenviar el mensaje al asesor
                     //whatsAppService.sendTextMessage(relacionAsesorCliente.getAdviserNumber(), "Mensaje del usuario " + senderId + ": " + text); //por ahora no se reenvia
@@ -196,7 +244,6 @@ public class WebhookController {
                     String textasesor = textMessage.getText().toUpperCase();
                     if (textasesor.equals("ASESOR")) {
                         Optional<String> asesorDisponible = relationAdviserCustomerService.buscarAsesorDisponible();
-                        System.out.println("Asesor disponible: " + asesorDisponible);
                         if (asesorDisponible.isPresent()) {
                             String asesorNumber = asesorDisponible.get();
                             String conversationSummary = chatGptService.generateConversationSummary(senderId);
@@ -204,8 +251,7 @@ public class WebhookController {
                             String messageToAdvisor = "Atención: El cliente " + customerName + " (Número de celular: " + senderId + ") ha solicitado un asesor.\n\n" +
                                     "Resumen de la conversación:\n" + conversationSummary;
                             whatsAppService.sendTextMessage(asesorNumber, messageToAdvisor);
-
-                            System.out.println("Se asigno al usuario " + senderId + " el asesor  con numero " + asesorNumber);
+                            whatsAppService.sendTextMessage(senderId, "Estamos comunicando a nuestros asesores para que se puedan conectar al chat. Por favor, espera un momento.");
                             guardarRelacionAsesorCliente(senderId, asesorNumber);
 
                             // Desactivar el procesamiento de mensajes para este usuario y marcar que está esperando al asesor
@@ -215,12 +261,6 @@ public class WebhookController {
                             whatsAppService.sendTextMessage(senderId, "Lo sentimos, no hay asesores disponibles en este momento. Por favor, intente más tarde.");
                         }
                     } else {
-                        // Guardar el mensaje del cliente en la lista correspondiente
-                        if (!userMessages.containsKey(senderId)) {
-                            userMessages.put(senderId, new ArrayList<>());
-                        }
-                        userMessages.get(senderId).add(text);
-
                         String analyzedResponse = sentimentAnalysisService.analyzeTextAndSaveEmotions(text);
                         JsonObject jsonObject = JsonParser.parseString(analyzedResponse).getAsJsonObject();
                         String emotion = jsonObject.get("emocion_predominante").getAsString();
@@ -234,18 +274,13 @@ public class WebhookController {
         } else if (messageType.equals("VOICE")) {
             WhatsAppWebhookInboundVoiceMessage voiceMessage = (WhatsAppWebhookInboundVoiceMessage) message;
             String voiceUrl = voiceMessage.getUrl();
-            System.out.println("Voice message received:");
-            System.out.println("URL: " + voiceUrl);
             // Descargar el audio desde la URL y guardar con extensión MP3
             File mp3File = audioDownloader.downloadAudio(voiceUrl);
             // Transcribir el audio a texto
             String transcription = transcriptionService.transcribeAudio(mp3File);
-            System.out.println("Transcription: " + transcription);
             ChatMessage chatMessage = chatGptService.getChatCompletion(senderId, transcription, "");
             String responseText = chatMessage.getContent();
             whatsAppService.sendTextMessage(senderId, responseText);
-        } else {
-            System.out.println("Unsupported message type: " + messageType);
         }
     }
     private void sendWelcomeMessage(String senderId) {
@@ -275,11 +310,9 @@ public class WebhookController {
                     String name = row.get(0) + " " + row.get(1);
                     saveRelation(senderId, dni, name, true); // Guardar relación en la base de datos
                     String userData = "Hola " + name + ", es un gusto que te comuniques con nosotros. ¿En qué podemos ayudarte?";
-                    System.out.println("Se ingreso a reconcer al usuario: " + userData);
                     return userData;
                 }
             }
-            System.out.println("No se encontró el DNI en el Excel. DNI: " + dni);
         } catch (IOException | GeneralSecurityException e) {
             e.printStackTrace();
         }

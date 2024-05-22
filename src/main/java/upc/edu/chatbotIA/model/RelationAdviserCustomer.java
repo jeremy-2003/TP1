@@ -16,5 +16,5 @@ public class RelationAdviserCustomer {
     private String userNumber;
     private LocalDateTime firstTimeInteraction;
     private LocalDateTime lastTimeInteraction;
-    private boolean active;
+    private Boolean active;
 }

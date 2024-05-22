@@ -49,7 +49,16 @@ public class RelationAdviserCustomerService {
         relationAdviserCustomerRepository.save(relacionAsesorCustomer);
     }
 
-    public RelationAdviserCustomer encontrarConversacionesActivas(String userNumber, boolean statusActive){
+    public RelationAdviserCustomer encontrarConversacionesActivas(String userNumber, Boolean statusActive){
         return relationAdviserCustomerRepository.findByUserNumberAndActive(userNumber, statusActive);
+    }
+
+    public RelationAdviserCustomer encontrarConversacionesActivasAdviserNumber(String adviserNumber, Boolean statusActive){
+        return relationAdviserCustomerRepository.findByAdviserNumberAndActive(adviserNumber, statusActive);
+    }
+
+    public void finalizarConversacion(RelationAdviserCustomer relacionAsesorCliente) {
+        relacionAsesorCliente.setActive(false);
+        relationAdviserCustomerRepository.save(relacionAsesorCliente);
     }
 }

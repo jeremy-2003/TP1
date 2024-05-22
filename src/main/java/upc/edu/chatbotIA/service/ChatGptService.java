@@ -71,13 +71,6 @@ public class ChatGptService {
         conversation.setTimestamp(LocalDateTime.now());
         conversationRepository.save(conversation);
 
-        // Logging para depuración
-        System.out.println("Historial de mensajes enviado a OpenAI:");
-        for (ChatMessage msg : chatMessages) {
-            System.out.println(msg.getRole() + ": " + msg.getContent());
-        }
-        System.out.println("Respuesta del asistente: " + assistantMessage.getContent());
-
         return assistantMessage;
     }
     public String generateConversationSummary(String userNumber) {

@@ -47,7 +47,6 @@ public class SheetsService {
         if (values == null || values.isEmpty()) {
             System.out.println("No data found.");
         } else {
-            System.out.println("Data retrieved successfully:");
             return values;
         }
         return Collections.emptyList();

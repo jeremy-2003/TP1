@@ -33,7 +33,6 @@ public class WhatsAppService {
 
         try {
             WhatsAppSingleMessageInfo messageInfo = whatsAppApi.sendWhatsAppTextMessage(textMessage).execute();
-            System.out.println("Respuesta de la API: " + messageInfo.getStatus().getDescription());
         } catch (ApiException e) {
             System.err.println("Error al enviar el mensaje: " + e.getMessage());
         }
