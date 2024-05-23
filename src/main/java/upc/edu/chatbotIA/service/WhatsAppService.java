@@ -11,6 +11,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import javax.print.attribute.standard.Media;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 @Service
 public class WhatsAppService {
@@ -53,4 +57,64 @@ public class WhatsAppService {
             System.err.println("Error al enviar el mensaje de audio: " + e.getMessage());
         }
     }
+
+    public void sendInteractiveListMessage(String to, String bodyText, List<Map<String, String>> rows) {
+        // Crear el mensaje interactivo de lista
+        WhatsAppInteractiveListMessage message = new WhatsAppInteractiveListMessage();
+        message.setFrom(senderName);
+        message.setTo(to);
+
+        // Crear el contenido del cuerpo del mensaje
+        WhatsAppInteractiveBodyContent bodyContent = new WhatsAppInteractiveBodyContent();
+        bodyContent.setText(bodyText);
+
+        // Crear la acción de la lista
+        WhatsAppInteractiveListActionContent actionContent = new WhatsAppInteractiveListActionContent();
+        actionContent.setTitle("Lista interactiva");
+
+        // Crear las secciones y agregar las filas
+        List<WhatsAppInteractiveListSectionContent> sections = new ArrayList<>();
+        WhatsAppInteractiveListSectionContent section = new WhatsAppInteractiveListSectionContent();
+
+        List<WhatsAppInteractiveRowContent> sectionRows = new ArrayList<>();
+        for (Map<String, String> row : rows) {
+            WhatsAppInteractiveRowContent sectionRow = new WhatsAppInteractiveRowContent();
+            sectionRow.setId(row.get("id"));
+            sectionRow.setTitle(row.get("title"));
+            sectionRows.add(sectionRow);
+        }
+
+        section.setRows(sectionRows);
+        sections.add(section);
+        actionContent.setSections(sections);
+
+        // Crear el contenido completo del mensaje interactivo
+        WhatsAppInteractiveListContent content = new WhatsAppInteractiveListContent();
+        content.setBody(bodyContent);
+        content.setAction(actionContent);
+
+        message.setContent(content);
+
+        // Opcional: Configurar opciones de URL
+        // WhatsAppUrlOptions urlOptions = new WhatsAppUrlOptions();
+        // urlOptions.setShortenUrl(true);
+        // urlOptions.setTrackClicks(true);
+        // urlOptions.setTrackingUrl("https://example.com/tracking");
+        // urlOptions.setRemoveProtocol(true);
+        // urlOptions.setCustomDomain("example.com");
+        // message.setUrlOptions(urlOptions);
+
+        // Enviar el mensaje a través de la API de Infobip
+        try {
+            WhatsAppSingleMessageInfo response = whatsAppApi.sendWhatsAppInteractiveListMessage(message).execute();
+            System.out.println("Respuesta de la API: " + response.getStatus().getDescription());
+        } catch (ApiException e) {
+            System.err.println("Error al enviar el mensaje interactivo de lista: " + e.getMessage());
+            e.printStackTrace();
+            // Imprime el cuerpo de la respuesta de error
+            System.err.println("Cuerpo de la respuesta de error: " + e.rawResponseBody());
+        }
+    }
+
+
 }

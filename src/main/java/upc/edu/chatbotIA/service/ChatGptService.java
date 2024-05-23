@@ -103,4 +103,24 @@ public class ChatGptService {
 
         return summaryMessage.getContent();
     }
+
+    public boolean isResolutionMessage(String userMessage) {
+        ChatMessage systemMessage = new ChatMessage();
+        systemMessage.setRole("system");
+        systemMessage.setContent(
+                "[INSTRUCCIONES]: Evalúa si la siguiente frase del cliente indica que su consulta ha sido resuelta o que ya no necesita más ayuda. " +
+                        "[OBLIGATORIO] Responde 'Sí' si la frase indica resolución o 'No' si la frase no indica resolución.\n\n" +
+                        "[FRASE]: " + userMessage
+        );
+        List<ChatMessage> chatMessages = new ArrayList<>();
+        chatMessages.add(systemMessage);
+        chatMessages.add(new ChatMessage("user", userMessage));
+        ChatCompletionRequest completionRequest = ChatCompletionRequest.builder()
+                .messages(chatMessages)
+                .model("gpt-3.5-turbo")
+                .build();
+        ChatMessage assistantMessage = openAiService.createChatCompletion(completionRequest).getChoices().get(0).getMessage();
+        System.out.println(assistantMessage.getContent().trim().equalsIgnoreCase("Sí"));
+        return assistantMessage.getContent().trim().equalsIgnoreCase("Sí");
+    }
 }

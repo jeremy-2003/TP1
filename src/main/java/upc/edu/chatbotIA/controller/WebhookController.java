@@ -6,11 +6,7 @@ import java.time.LocalDateTime;
 import java.util.*;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.infobip.model.WhatsAppWebhookInboundMessage;
-import com.infobip.model.WhatsAppWebhookInboundMessageData;
-import com.infobip.model.WhatsAppWebhookInboundMessageResult;
-import com.infobip.model.WhatsAppWebhookInboundTextMessage;
-import com.infobip.model.WhatsAppWebhookInboundVoiceMessage;
+import com.infobip.model.*;
 
 import com.theokanning.openai.completion.chat.ChatMessage;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -20,10 +16,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
-import upc.edu.chatbotIA.model.Adviser;
-import upc.edu.chatbotIA.model.BlockedUser;
-import upc.edu.chatbotIA.model.Relation;
-import upc.edu.chatbotIA.model.RelationAdviserCustomer;
+import upc.edu.chatbotIA.model.*;
 import upc.edu.chatbotIA.repository.AdviserRepository;
 import upc.edu.chatbotIA.repository.RelationRepository;
 import upc.edu.chatbotIA.service.*;
@@ -47,19 +40,20 @@ public class WebhookController {
     private final BlockedUserService blockedUserService;
     private final AdviserRepository adviserRepository;
 
-    private final FeedbackService feedbackService;
+    private final SurveyResponseService surveyResponseService;
 
     private final Map<String, Boolean> isWaitingForFeedback = new HashMap<>();
     private final Map<String, Integer> feedbackRating = new HashMap<>();
     private final Map<String, String> feedbackComment = new HashMap<>();
     private Map<String, List<String>> userMessages = new HashMap<>();
+    private final Map<String, Integer> surveyQuestionMap = new HashMap<>();
 
     @Autowired
     public WebhookController(ObjectMapper objectMapper, AudioDownloader audioDownloader,
                              TranscriptionService transcriptionService, ChatGptService chatGptService, WhatsAppService whatsAppService,
                              SheetsService sheetsService, RelationRepository relationRepository, BlockedUserService blockedUserService,
                              RelationAdviserCustomerService relationAdviserCustomerService, SentimentAnalysisService sentimentAnalysisService,
-                             FeedbackService feedbackService, AdviserRepository adviserRepository) {
+                             SurveyResponseService surveyResponseService, AdviserRepository adviserRepository) {
         this.objectMapper = objectMapper;
         this.audioDownloader = audioDownloader;
         this.transcriptionService = transcriptionService;
@@ -70,7 +64,7 @@ public class WebhookController {
         this.blockedUserService = blockedUserService;
         this.relationAdviserCustomerService = relationAdviserCustomerService;
         this.sentimentAnalysisService = sentimentAnalysisService;
-        this.feedbackService = feedbackService;
+        this.surveyResponseService = surveyResponseService;
         this.adviserRepository = adviserRepository;
     }
     private final Map<String, Integer> failedAttempts = new HashMap<>();
@@ -268,6 +262,15 @@ public class WebhookController {
                         ChatMessage chatMessage = chatGptService.getChatCompletion(senderId, text, emotion);
                         String responseText = chatMessage.getContent();
                         whatsAppService.sendTextMessage(senderId, responseText);
+                        // Verificar si el mensaje del cliente indica que ha resuelto su consulta o no necesita más ayuda
+                        if (chatGptService.isResolutionMessage(text)) {
+                            sendSatisfactionSurvey(senderId, 1);
+                            handleSurveyResponse1(senderId, text);
+                            handleSurveyResponse2(senderId, text);
+                            handleSurveyResponse3(senderId, text);
+                            handleSurveyResponse4(senderId, text);
+                            whatsAppService.sendTextMessage(senderId, "Muchas gracias por completar la encuesta");
+                        }
                     }
                 }
             }
@@ -349,5 +352,172 @@ public class WebhookController {
         }
         return "";
     }
+
+    /*private void sendSatisfactionSurvey(String customerNumber) {
+        // Pregunta 1
+        List<Map<String, String>> options1 = new ArrayList<>();
+        options1.add(createOption("1", "1. Muy confusa"));
+        options1.add(createOption("2", "2. Algo confusa"));
+        options1.add(createOption("3", "3. Neutral"));
+        options1.add(createOption("4", "4. Clara"));
+        options1.add(createOption("5", "5. Muy clara"));
+        sendInteractiveListMessage(customerNumber, "¿Cómo calificarías la claridad de la información proporcionada?", options1);
+
+        // Pregunta 2
+        List<Map<String, String>> options2 = new ArrayList<>();
+        options2.add(createOption("1", "1. Muy insatisfecho"));
+        options2.add(createOption("2", "2. Insatisfecho"));
+        options2.add(createOption("3", "3. Neutral"));
+        options2.add(createOption("4", "4. Satisfecho"));
+        options2.add(createOption("5", "5. Muy satisfecho"));
+        sendInteractiveListMessage(customerNumber, "¿Qué tan satisfecho estás con el tiempo de respuesta?", options2);
+
+        // Pregunta 3
+        List<Map<String, String>> options3 = new ArrayList<>();
+        options3.add(createOption("1", "1"));
+        options3.add(createOption("2", "2"));
+        options3.add(createOption("3", "3"));
+        options3.add(createOption("4", "4"));
+        options3.add(createOption("5", "5"));
+        options3.add(createOption("6", "6"));
+        options3.add(createOption("7", "7"));
+        options3.add(createOption("8", "8"));
+        options3.add(createOption("9", "9"));
+        options3.add(createOption("10", "10"));
+        sendInteractiveListMessage(customerNumber, "En una escala del 1 al 10, ¿qué tan probable es que recomiendes nuestro servicio a otros?", options3);
+
+        // Pregunta 4
+        whatsAppService.sendTextMessage(customerNumber, "Si tienes algún comentario adicional o sugerencia, por favor escríbelo a continuación:");
+    }*/
+
+    private Map<String, String> createOption(String id, String title) {
+        Map<String, String> optionMap = new HashMap<>();
+        optionMap.put("id", id);
+        optionMap.put("title", title);
+        return optionMap;
+    }
+
+    private void sendInteractiveListMessage(String customerNumber, String question, List<Map<String, String>> options) {
+        List<Map<String, String>> rows = new ArrayList<>();
+        for (Map<String, String> option : options) {
+            Map<String, String> row = new HashMap<>();
+            row.put("id", option.get("title"));
+            row.put("title", option.get("title"));
+            rows.add(row);
+        }
+        whatsAppService.sendInteractiveListMessage(customerNumber, question, rows);
+    }
+
+
+    private void sendSatisfactionSurvey(String customerNumber, int questionNumber) {
+        // Preguntas de la encuesta
+        switch (questionNumber) {
+            case 1:
+                sendSurveyQuestion1(customerNumber);
+                break;
+            case 2:
+                sendSurveyQuestion2(customerNumber);
+                break;
+            case 3:
+                sendSurveyQuestion3(customerNumber);
+                break;
+            case 4:
+                sendSurveyQuestion4(customerNumber);
+                break;
+            default:
+                // Encuesta completada, puedes guardar las respuestas si es necesario
+                break;
+        }
+    }
+
+    // Métodos para enviar preguntas individuales de la encuesta
+    private void sendSurveyQuestion1(String customerNumber) {
+        List<Map<String, String>> options = new ArrayList<>();
+        options.add(createOption("1", "1. Muy confusa"));
+        options.add(createOption("2", "2. Algo confusa"));
+        options.add(createOption("3", "3. Neutral"));
+        options.add(createOption("4", "4. Clara"));
+        options.add(createOption("5", "5. Muy clara"));
+        sendInteractiveListMessage(customerNumber, "¿Cómo calificarías la claridad de la información proporcionada?", options);
+    }
+
+    private void sendSurveyQuestion2(String customerNumber) {
+        List<Map<String, String>> options = new ArrayList<>();
+        options.add(createOption("1", "1. Muy insatisfecho"));
+        options.add(createOption("2", "2. Insatisfecho"));
+        options.add(createOption("3", "3. Neutral"));
+        options.add(createOption("4", "4. Satisfecho"));
+        options.add(createOption("5", "5. Muy satisfecho"));
+        sendInteractiveListMessage(customerNumber, "¿Qué tan satisfecho estás con el tiempo de respuesta?", options);
+    }
+
+    private void sendSurveyQuestion3(String customerNumber) {
+        List<Map<String, String>> options = new ArrayList<>();
+        options.add(createOption("1", "1"));
+        options.add(createOption("2", "2"));
+        options.add(createOption("3", "3"));
+        options.add(createOption("4", "4"));
+        options.add(createOption("5", "5"));
+        options.add(createOption("6", "6"));
+        options.add(createOption("7", "7"));
+        options.add(createOption("8", "8"));
+        options.add(createOption("9", "9"));
+        options.add(createOption("10", "10"));
+        sendInteractiveListMessage(customerNumber, "En una escala del 1 al 10, ¿qué tan probable es que recomiendes nuestro servicio a otros?", options);
+    }
+
+    private void sendSurveyQuestion4(String customerNumber) {
+        // Pregunta 4: Abierta, solo se envía el mensaje
+        whatsAppService.sendTextMessage(customerNumber, "Si tienes algún comentario adicional o sugerencia, por favor escríbelo a continuación:");
+    }
+
+    private void handleSurveyResponse1(String customerNumber, String response) {
+        // Guardar la respuesta de la pregunta 1
+        SurveyResponse surveyResponse = new SurveyResponse();
+        surveyResponse.setCustomerNumber(customerNumber);
+        surveyResponse.setQuestionNumber(1);
+        surveyResponse.setResponse(response);
+        surveyResponse.setCreatedAt(LocalDateTime.now());
+        surveyResponseService.saveSurveyResponse(surveyResponse);
+
+        // Enviar la siguiente pregunta
+        sendSatisfactionSurvey(customerNumber, 2);
+    }
+    private void handleSurveyResponse2(String customerNumber, String response) {
+        // Guardar la respuesta de la pregunta 2
+        SurveyResponse surveyResponse = new SurveyResponse();
+        surveyResponse.setCustomerNumber(customerNumber);
+        surveyResponse.setQuestionNumber(2);
+        surveyResponse.setResponse(response);
+        surveyResponse.setCreatedAt(LocalDateTime.now());
+        surveyResponseService.saveSurveyResponse(surveyResponse);
+
+        // Enviar la siguiente pregunta
+        sendSatisfactionSurvey(customerNumber, 3);
+    }
+
+    private void handleSurveyResponse3(String customerNumber, String response) {
+        // Guardar la respuesta de la pregunta 3
+        SurveyResponse surveyResponse = new SurveyResponse();
+        surveyResponse.setCustomerNumber(customerNumber);
+        surveyResponse.setQuestionNumber(3);
+        surveyResponse.setResponse(response);
+        surveyResponse.setCreatedAt(LocalDateTime.now());
+        surveyResponseService.saveSurveyResponse(surveyResponse);
+
+        // Enviar la siguiente pregunta
+        sendSatisfactionSurvey(customerNumber, 4);
+    }
+
+    private void handleSurveyResponse4(String customerNumber, String response) {
+        // Guardar la respuesta de la pregunta 4
+        SurveyResponse surveyResponse = new SurveyResponse();
+        surveyResponse.setCustomerNumber(customerNumber);
+        surveyResponse.setQuestionNumber(4);
+        surveyResponse.setResponse(response);
+        surveyResponse.setCreatedAt(LocalDateTime.now());
+        surveyResponseService.saveSurveyResponse(surveyResponse);
+    }
+
 
 }
