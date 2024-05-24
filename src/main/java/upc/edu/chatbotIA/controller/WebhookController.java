@@ -266,7 +266,7 @@ public class WebhookController {
                     } else {
                         String analyzedResponse = sentimentAnalysisService.analyzeTextAndSaveEmotions(text);
                         JsonObject jsonObject = JsonParser.parseString(analyzedResponse).getAsJsonObject();
-                        String emotion = jsonObject.get("emocion_predominante").getAsString();
+                        String emotion = jsonObject.get("sentimiento_predominante").getAsString();
 
                         ChatMessage chatMessage = chatGptService.getChatCompletion(senderId, text, emotion);
                         String responseText = chatMessage.getContent();
