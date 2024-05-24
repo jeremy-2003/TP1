@@ -226,17 +226,17 @@ public class WebhookController {
                     isFirstMessage.put(senderId, false);
                 }
             }
-            if (isSurveyInProgress.containsKey(senderId) && isSurveyInProgress.get(senderId)) {
+            /*if (isSurveyInProgress.containsKey(senderId) && isSurveyInProgress.get(senderId)) {
                 int currentQuestion = currentSurveyQuestion.get(senderId);
 
-                if (currentQuestion == 4) {
-                    handleSurveyResponse4(senderId, text);
+                if (currentQuestion == 6) {
+                    handleSurveyResponse6(senderId, text);
                     whatsAppService.sendTextMessage(senderId, "¡Gracias por completar la encuesta!");
                     isSurveyInProgress.put(senderId, false);
                     isSurveyInProgress.remove(senderId);
                     currentSurveyQuestion.remove(senderId);
                 }
-            }
+            }*/
             else {
                 // Verificar si el usuario tiene una relación activa con un asesor
                 RelationAdviserCustomer relacionAsesorCliente = relationAdviserCustomerService.encontrarConversacionesActivas(senderId, true);
@@ -294,7 +294,6 @@ public class WebhookController {
             String responseText = chatMessage.getContent();
             whatsAppService.sendTextMessage(senderId, responseText);
         } else if (messageType.equals("INTERACTIVE_LIST_REPLY")) {
-            System.out.println("Ingreso aqui");
             WhatsAppWebhookListReplyContent interactiveMessage = (WhatsAppWebhookListReplyContent)message;
             String selectedOptionId = interactiveMessage.getId();
             if (isSurveyInProgress.containsKey(senderId) && isSurveyInProgress.get(senderId)) {
@@ -313,10 +312,25 @@ public class WebhookController {
                         break;
                     case 3:
                         handleSurveyResponse3(senderId, selectedOptionId);
-                        whatsAppService.sendTextMessage(senderId, "Si tienes algún comentario adicional o sugerencia, por favor escríbelo a continuación:");
+                        sendSurveyQuestion4(senderId);
                         currentSurveyQuestion.put(senderId, 4);
-                        isSurveyInProgress.put(senderId, true);
                         break;
+                    case 4:
+                        handleSurveyResponse4(senderId, selectedOptionId);
+                        sendSurveyQuestion5(senderId);
+                        currentSurveyQuestion.put(senderId, 5);
+                        break;
+                    case 5:
+                        handleSurveyResponse5(senderId, selectedOptionId);
+                        sendSurveyQuestion6(senderId);
+                        currentSurveyQuestion.put(senderId, 6);
+                        break;
+                    case 6:
+                        handleSurveyResponse6(senderId, selectedOptionId);
+                        whatsAppService.sendTextMessage(senderId, "¡Gracias por completar la encuesta!");
+                        isSurveyInProgress.put(senderId, false);
+                        isSurveyInProgress.remove(senderId);
+                        currentSurveyQuestion.remove(senderId);
                 }
             }
         }
@@ -410,52 +424,66 @@ public class WebhookController {
     // Métodos para enviar preguntas individuales de la encuesta
     private void sendSurveyQuestion1(String customerNumber) {
         List<Map<String, String>> options = new ArrayList<>();
-        options.add(createOption("1", "1. Muy confusa"));
-        options.add(createOption("2", "2. Algo confusa"));
-        options.add(createOption("3", "3. Neutral"));
-        options.add(createOption("4", "4. Clara"));
-        options.add(createOption("5", "5. Muy clara"));
-        sendInteractiveListMessage(customerNumber, "¿Cómo calificarías la claridad de la información proporcionada?", options);
+        options.add(createOption("1", "1. Nada de precisión"));
+        options.add(createOption("2", "2. Poca precisión"));
+        options.add(createOption("3", "3. Moderada precisión"));
+        options.add(createOption("4", "4. Mucha precisión"));
+        options.add(createOption("5", "5. Completa precisión"));
+        sendInteractiveListMessage(customerNumber, "¿En qué medida el chatbot logró comprender con precisión tus preguntas y dudas?", options);
     }
-
     private void sendSurveyQuestion2(String customerNumber) {
         List<Map<String, String>> options = new ArrayList<>();
-        options.add(createOption("1", "1. Muy insatisfecho"));
-        options.add(createOption("2", "2. Insatisfecho"));
-        options.add(createOption("3", "3. Neutral"));
-        options.add(createOption("4", "4. Satisfecho"));
-        options.add(createOption("5", "5. Muy satisfecho"));
-        sendInteractiveListMessage(customerNumber, "¿Qué tan satisfecho estás con el tiempo de respuesta?", options);
+        options.add(createOption("1", "1. Nada interactivas"));
+        options.add(createOption("2", "2. Poco interactivas"));
+        options.add(createOption("3", "3. Moderadas"));
+        options.add(createOption("4", "4. Muy interactivas"));
+        options.add(createOption("5", "5. Completamente int."));
+        sendInteractiveListMessage(customerNumber, "¿Sientes que las respuestas del chatbot fueron interactivas y fluidas en el diálogo?", options);
     }
-
     private void sendSurveyQuestion3(String customerNumber) {
         List<Map<String, String>> options = new ArrayList<>();
-        options.add(createOption("1", "1"));
-        options.add(createOption("2", "2"));
-        options.add(createOption("3", "3"));
-        options.add(createOption("4", "4"));
-        options.add(createOption("5", "5"));
-        options.add(createOption("6", "6"));
-        options.add(createOption("7", "7"));
-        options.add(createOption("8", "8"));
-        options.add(createOption("9", "9"));
-        options.add(createOption("10", "10"));
-        sendInteractiveListMessage(customerNumber, "En una escala del 1 al 10, ¿qué tan probable es que recomiendes nuestro servicio a otros?", options);
+        options.add(createOption("1", "1. Nada naturales"));
+        options.add(createOption("2", "2. Poco naturales"));
+        options.add(createOption("3", "3. Moderadamente nat."));
+        options.add(createOption("4", "4. Muy naturales"));
+        options.add(createOption("5", "5. Completamente nat."));
+        sendInteractiveListMessage(customerNumber, "¿En qué medida las respuestas del chatbot te parecieron naturales y similares a las de una persona?", options);
     }
-
     private void sendSurveyQuestion4(String customerNumber) {
-        // Pregunta 4: Abierta, solo se envía el mensaje
-        whatsAppService.sendTextMessage(customerNumber, "Si tienes algún comentario adicional o sugerencia, por favor escríbelo a continuación:");
+        List<Map<String, String>> options = new ArrayList<>();
+        options.add(createOption("1", "1. Nada confiable"));
+        options.add(createOption("2", "2. Poco confiable"));
+        options.add(createOption("3", "3. Moderadamente conf."));
+        options.add(createOption("4", "4. Muy confiable"));
+        options.add(createOption("5", "5. Completamente conf."));
+        sendInteractiveListMessage(customerNumber, "¿Qué tan confiable te parece el chatbot en general?", options);
     }
-
+    private void sendSurveyQuestion5(String customerNumber) {
+        List<Map<String, String>> options = new ArrayList<>();
+        options.add(createOption("1", "1. Nada positiva"));
+        options.add(createOption("2", "2. Poco positiva"));
+        options.add(createOption("3", "3. Moderadamente pos."));
+        options.add(createOption("4", "4. Muy positiva"));
+        options.add(createOption("5", "5. Extremadamente pos."));
+        sendInteractiveListMessage(customerNumber, "¿En qué medida tu experiencia general con el chatbot ha sido positiva?", options);
+    }
+    private void sendSurveyQuestion6(String customerNumber) {
+        List<Map<String, String>> options = new ArrayList<>();
+        options.add(createOption("1", "1. Nada rápido ni efec."));
+        options.add(createOption("2", "2. Poco rápido y efec."));
+        options.add(createOption("3", "3. Moderadamente r&a."));
+        options.add(createOption("4", "4. Muy rápido y efec."));
+        options.add(createOption("5", "5. Completamente r&a."));
+        sendInteractiveListMessage(customerNumber, "¿Consideras que el chatbot resolvió tus consultas de manera rápida y efectiva?", options);
+    }
     private void handleSurveyResponse1(String customerNumber, String selectedOption) {
         // Extraer el número de la opción seleccionada
         String responseNumber = selectedOption.substring(0, 1);
-
         // Guardar la respuesta de la pregunta 1
         SurveyResponse surveyResponse = new SurveyResponse();
         surveyResponse.setCustomerNumber(customerNumber);
         surveyResponse.setQuestionNumber(1);
+        surveyResponse.setQuestionMetric("comprensión humana");
         surveyResponse.setResponse(responseNumber);
         surveyResponse.setCreatedAt(LocalDateTime.now());
         surveyResponseService.saveSurveyResponse(surveyResponse);
@@ -463,35 +491,61 @@ public class WebhookController {
     private void handleSurveyResponse2(String customerNumber, String selectedOption) {
         // Extraer el número de la opción seleccionada
         String responseNumber = selectedOption.substring(0, 1);
-
         // Guardar la respuesta de la pregunta 2
         SurveyResponse surveyResponse = new SurveyResponse();
         surveyResponse.setCustomerNumber(customerNumber);
         surveyResponse.setQuestionNumber(2);
+        surveyResponse.setQuestionMetric("contingencia percibida");
         surveyResponse.setResponse(responseNumber);
         surveyResponse.setCreatedAt(LocalDateTime.now());
         surveyResponseService.saveSurveyResponse(surveyResponse);
     }
-
-    private void handleSurveyResponse3(String customerNumber, String response) {
+    private void handleSurveyResponse3(String customerNumber, String selectedOption) {
+        // Extraer el número de la opción seleccionada
+        String responseNumber = selectedOption.substring(0, 1);
         // Guardar la respuesta de la pregunta 3
         SurveyResponse surveyResponse = new SurveyResponse();
         surveyResponse.setCustomerNumber(customerNumber);
         surveyResponse.setQuestionNumber(3);
-        surveyResponse.setResponse(response);
+        surveyResponse.setQuestionMetric("humanidad de la respuesta");
+        surveyResponse.setResponse(responseNumber);
         surveyResponse.setCreatedAt(LocalDateTime.now());
         surveyResponseService.saveSurveyResponse(surveyResponse);
     }
-
-    private void handleSurveyResponse4(String customerNumber, String response) {
+    private void handleSurveyResponse4(String customerNumber, String selectedOption) {
+        // Extraer el número de la opción seleccionada
+        String responseNumber = selectedOption.substring(0, 1);
         // Guardar la respuesta de la pregunta 4
         SurveyResponse surveyResponse = new SurveyResponse();
         surveyResponse.setCustomerNumber(customerNumber);
         surveyResponse.setQuestionNumber(4);
-        surveyResponse.setResponse(response);
+        surveyResponse.setQuestionMetric("confiabilidad del Chatbot");
+        surveyResponse.setResponse(responseNumber);
         surveyResponse.setCreatedAt(LocalDateTime.now());
         surveyResponseService.saveSurveyResponse(surveyResponse);
     }
-
-
+    private void handleSurveyResponse5(String customerNumber, String selectedOption) {
+        // Extraer el número de la opción seleccionada
+        String responseNumber = selectedOption.substring(0, 1);
+        // Guardar la respuesta de la pregunta 5
+        SurveyResponse surveyResponse = new SurveyResponse();
+        surveyResponse.setCustomerNumber(customerNumber);
+        surveyResponse.setQuestionNumber(5);
+        surveyResponse.setQuestionMetric("experiencia del cliente");
+        surveyResponse.setResponse(responseNumber);
+        surveyResponse.setCreatedAt(LocalDateTime.now());
+        surveyResponseService.saveSurveyResponse(surveyResponse);
+    }
+    private void handleSurveyResponse6(String customerNumber, String selectedOption) {
+        // Extraer el número de la opción seleccionada
+        String responseNumber = selectedOption.substring(0, 1);
+        // Guardar la respuesta de la pregunta 6
+        SurveyResponse surveyResponse = new SurveyResponse();
+        surveyResponse.setCustomerNumber(customerNumber);
+        surveyResponse.setQuestionNumber(6);
+        surveyResponse.setQuestionMetric("tasa de resolución en el primer contacto");
+        surveyResponse.setResponse(responseNumber);
+        surveyResponse.setCreatedAt(LocalDateTime.now());
+        surveyResponseService.saveSurveyResponse(surveyResponse);
+    }
 }

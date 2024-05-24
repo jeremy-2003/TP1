@@ -48,7 +48,6 @@ public class ChatGptService {
 
         for (Conversation conversation : previousConversations) {
             chatMessages.add(new ChatMessage("user", conversation.getPrompt()));
-            chatMessages.add(new ChatMessage("assistant", conversation.getResponse()));
         }
 
         // Añadir el mensaje actual del usuario
@@ -96,7 +95,7 @@ public class ChatGptService {
 
         ChatCompletionRequest completionRequest = ChatCompletionRequest.builder()
                 .messages(chatMessages)
-                .model("gpt-4o-2024-05-13")
+                .model("gpt-3.5-turbo-0125")
                 .build();
 
         ChatMessage summaryMessage = openAiService.createChatCompletion(completionRequest).getChoices().get(0).getMessage();
@@ -117,7 +116,7 @@ public class ChatGptService {
         chatMessages.add(new ChatMessage("user", userMessage));
         ChatCompletionRequest completionRequest = ChatCompletionRequest.builder()
                 .messages(chatMessages)
-                .model("gpt-3.5-turbo")
+                .model("gpt-3.5-turbo-0125")
                 .build();
         ChatMessage assistantMessage = openAiService.createChatCompletion(completionRequest).getChoices().get(0).getMessage();
         System.out.println(assistantMessage.getContent().trim().equalsIgnoreCase("Sí"));

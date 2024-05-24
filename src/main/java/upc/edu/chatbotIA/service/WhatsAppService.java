@@ -95,15 +95,6 @@ public class WhatsAppService {
 
         message.setContent(content);
 
-        // Opcional: Configurar opciones de URL
-        // WhatsAppUrlOptions urlOptions = new WhatsAppUrlOptions();
-        // urlOptions.setShortenUrl(true);
-        // urlOptions.setTrackClicks(true);
-        // urlOptions.setTrackingUrl("https://example.com/tracking");
-        // urlOptions.setRemoveProtocol(true);
-        // urlOptions.setCustomDomain("example.com");
-        // message.setUrlOptions(urlOptions);
-
         // Enviar el mensaje a través de la API de Infobip
         try {
             WhatsAppSingleMessageInfo response = whatsAppApi.sendWhatsAppInteractiveListMessage(message).execute();
