@@ -42,11 +42,8 @@ public class WebhookController {
 
     private final SurveyResponseService surveyResponseService;
 
-    private final Map<String, Boolean> isWaitingForFeedback = new HashMap<>();
-    private final Map<String, Integer> feedbackRating = new HashMap<>();
-    private final Map<String, String> feedbackComment = new HashMap<>();
-    private Map<String, List<String>> userMessages = new HashMap<>();
-    private final Map<String, Integer> surveyQuestionMap = new HashMap<>();
+    private Map<String, Boolean> isSurveyInProgress = new HashMap<>();
+    private Map<String, Integer> currentSurveyQuestion = new HashMap<>();
 
     @Autowired
     public WebhookController(ObjectMapper objectMapper, AudioDownloader audioDownloader,
@@ -228,7 +225,19 @@ public class WebhookController {
                     whatsAppService.sendTextMessage(senderId, userData);
                     isFirstMessage.put(senderId, false);
                 }
-            } else {
+            }
+            if (isSurveyInProgress.containsKey(senderId) && isSurveyInProgress.get(senderId)) {
+                int currentQuestion = currentSurveyQuestion.get(senderId);
+
+                if (currentQuestion == 4) {
+                    handleSurveyResponse4(senderId, text);
+                    whatsAppService.sendTextMessage(senderId, "¡Gracias por completar la encuesta!");
+                    isSurveyInProgress.put(senderId, false);
+                    isSurveyInProgress.remove(senderId);
+                    currentSurveyQuestion.remove(senderId);
+                }
+            }
+            else {
                 // Verificar si el usuario tiene una relación activa con un asesor
                 RelationAdviserCustomer relacionAsesorCliente = relationAdviserCustomerService.encontrarConversacionesActivas(senderId, true);
                 if (relacionAsesorCliente != null) {
@@ -264,16 +273,16 @@ public class WebhookController {
                         whatsAppService.sendTextMessage(senderId, responseText);
                         // Verificar si el mensaje del cliente indica que ha resuelto su consulta o no necesita más ayuda
                         if (chatGptService.isResolutionMessage(text)) {
-                            sendSatisfactionSurvey(senderId, 1);
-                            handleSurveyResponse1(senderId, text);
-                            handleSurveyResponse2(senderId, text);
-                            handleSurveyResponse3(senderId, text);
-                            handleSurveyResponse4(senderId, text);
-                            whatsAppService.sendTextMessage(senderId, "Muchas gracias por completar la encuesta");
+                            // Aquí inicia la encuesta
+                            sendSurveyQuestion1(senderId);
+                            isSurveyInProgress.put(senderId, true);
+                            currentSurveyQuestion.put(senderId, 1);
                         }
                     }
                 }
+
             }
+
         } else if (messageType.equals("VOICE")) {
             WhatsAppWebhookInboundVoiceMessage voiceMessage = (WhatsAppWebhookInboundVoiceMessage) message;
             String voiceUrl = voiceMessage.getUrl();
@@ -284,6 +293,32 @@ public class WebhookController {
             ChatMessage chatMessage = chatGptService.getChatCompletion(senderId, transcription, "");
             String responseText = chatMessage.getContent();
             whatsAppService.sendTextMessage(senderId, responseText);
+        } else if (messageType.equals("INTERACTIVE_LIST_REPLY")) {
+            System.out.println("Ingreso aqui");
+            WhatsAppWebhookListReplyContent interactiveMessage = (WhatsAppWebhookListReplyContent)message;
+            String selectedOptionId = interactiveMessage.getId();
+            if (isSurveyInProgress.containsKey(senderId) && isSurveyInProgress.get(senderId)) {
+                int currentQuestion = currentSurveyQuestion.get(senderId);
+
+                switch (currentQuestion) {
+                    case 1:
+                        handleSurveyResponse1(senderId, selectedOptionId);
+                        sendSurveyQuestion2(senderId);
+                        currentSurveyQuestion.put(senderId, 2);
+                        break;
+                    case 2:
+                        handleSurveyResponse2(senderId, selectedOptionId);
+                        sendSurveyQuestion3(senderId);
+                        currentSurveyQuestion.put(senderId, 3);
+                        break;
+                    case 3:
+                        handleSurveyResponse3(senderId, selectedOptionId);
+                        whatsAppService.sendTextMessage(senderId, "Si tienes algún comentario adicional o sugerencia, por favor escríbelo a continuación:");
+                        currentSurveyQuestion.put(senderId, 4);
+                        isSurveyInProgress.put(senderId, true);
+                        break;
+                }
+            }
         }
     }
     private void sendWelcomeMessage(String senderId) {
@@ -353,43 +388,6 @@ public class WebhookController {
         return "";
     }
 
-    /*private void sendSatisfactionSurvey(String customerNumber) {
-        // Pregunta 1
-        List<Map<String, String>> options1 = new ArrayList<>();
-        options1.add(createOption("1", "1. Muy confusa"));
-        options1.add(createOption("2", "2. Algo confusa"));
-        options1.add(createOption("3", "3. Neutral"));
-        options1.add(createOption("4", "4. Clara"));
-        options1.add(createOption("5", "5. Muy clara"));
-        sendInteractiveListMessage(customerNumber, "¿Cómo calificarías la claridad de la información proporcionada?", options1);
-
-        // Pregunta 2
-        List<Map<String, String>> options2 = new ArrayList<>();
-        options2.add(createOption("1", "1. Muy insatisfecho"));
-        options2.add(createOption("2", "2. Insatisfecho"));
-        options2.add(createOption("3", "3. Neutral"));
-        options2.add(createOption("4", "4. Satisfecho"));
-        options2.add(createOption("5", "5. Muy satisfecho"));
-        sendInteractiveListMessage(customerNumber, "¿Qué tan satisfecho estás con el tiempo de respuesta?", options2);
-
-        // Pregunta 3
-        List<Map<String, String>> options3 = new ArrayList<>();
-        options3.add(createOption("1", "1"));
-        options3.add(createOption("2", "2"));
-        options3.add(createOption("3", "3"));
-        options3.add(createOption("4", "4"));
-        options3.add(createOption("5", "5"));
-        options3.add(createOption("6", "6"));
-        options3.add(createOption("7", "7"));
-        options3.add(createOption("8", "8"));
-        options3.add(createOption("9", "9"));
-        options3.add(createOption("10", "10"));
-        sendInteractiveListMessage(customerNumber, "En una escala del 1 al 10, ¿qué tan probable es que recomiendes nuestro servicio a otros?", options3);
-
-        // Pregunta 4
-        whatsAppService.sendTextMessage(customerNumber, "Si tienes algún comentario adicional o sugerencia, por favor escríbelo a continuación:");
-    }*/
-
     private Map<String, String> createOption(String id, String title) {
         Map<String, String> optionMap = new HashMap<>();
         optionMap.put("id", id);
@@ -408,27 +406,6 @@ public class WebhookController {
         whatsAppService.sendInteractiveListMessage(customerNumber, question, rows);
     }
 
-
-    private void sendSatisfactionSurvey(String customerNumber, int questionNumber) {
-        // Preguntas de la encuesta
-        switch (questionNumber) {
-            case 1:
-                sendSurveyQuestion1(customerNumber);
-                break;
-            case 2:
-                sendSurveyQuestion2(customerNumber);
-                break;
-            case 3:
-                sendSurveyQuestion3(customerNumber);
-                break;
-            case 4:
-                sendSurveyQuestion4(customerNumber);
-                break;
-            default:
-                // Encuesta completada, puedes guardar las respuestas si es necesario
-                break;
-        }
-    }
 
     // Métodos para enviar preguntas individuales de la encuesta
     private void sendSurveyQuestion1(String customerNumber) {
@@ -471,29 +448,29 @@ public class WebhookController {
         whatsAppService.sendTextMessage(customerNumber, "Si tienes algún comentario adicional o sugerencia, por favor escríbelo a continuación:");
     }
 
-    private void handleSurveyResponse1(String customerNumber, String response) {
+    private void handleSurveyResponse1(String customerNumber, String selectedOption) {
+        // Extraer el número de la opción seleccionada
+        String responseNumber = selectedOption.substring(0, 1);
+
         // Guardar la respuesta de la pregunta 1
         SurveyResponse surveyResponse = new SurveyResponse();
         surveyResponse.setCustomerNumber(customerNumber);
         surveyResponse.setQuestionNumber(1);
-        surveyResponse.setResponse(response);
+        surveyResponse.setResponse(responseNumber);
         surveyResponse.setCreatedAt(LocalDateTime.now());
         surveyResponseService.saveSurveyResponse(surveyResponse);
-
-        // Enviar la siguiente pregunta
-        sendSatisfactionSurvey(customerNumber, 2);
     }
-    private void handleSurveyResponse2(String customerNumber, String response) {
+    private void handleSurveyResponse2(String customerNumber, String selectedOption) {
+        // Extraer el número de la opción seleccionada
+        String responseNumber = selectedOption.substring(0, 1);
+
         // Guardar la respuesta de la pregunta 2
         SurveyResponse surveyResponse = new SurveyResponse();
         surveyResponse.setCustomerNumber(customerNumber);
         surveyResponse.setQuestionNumber(2);
-        surveyResponse.setResponse(response);
+        surveyResponse.setResponse(responseNumber);
         surveyResponse.setCreatedAt(LocalDateTime.now());
         surveyResponseService.saveSurveyResponse(surveyResponse);
-
-        // Enviar la siguiente pregunta
-        sendSatisfactionSurvey(customerNumber, 3);
     }
 
     private void handleSurveyResponse3(String customerNumber, String response) {
@@ -504,9 +481,6 @@ public class WebhookController {
         surveyResponse.setResponse(response);
         surveyResponse.setCreatedAt(LocalDateTime.now());
         surveyResponseService.saveSurveyResponse(surveyResponse);
-
-        // Enviar la siguiente pregunta
-        sendSatisfactionSurvey(customerNumber, 4);
     }
 
     private void handleSurveyResponse4(String customerNumber, String response) {
