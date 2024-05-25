@@ -23,7 +23,7 @@ public interface ChatInteractionMetricsRepository extends CrudRepository<ChatInt
     @Query("SELECT COUNT(*) FROM chat_interaction_metrics WHERE resolved_in_first_contact = true")
     long getResolvedInFirstContactCount();
 
-    @Query("SELECT AVG(average_response_time) FROM ChatInteractionMetrics")
+    @Query("SELECT AVG(average_response_time) FROM chat_interaction_metrics")
     double getAverageResponseTime();
 
 }

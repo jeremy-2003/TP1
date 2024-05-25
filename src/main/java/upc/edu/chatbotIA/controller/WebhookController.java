@@ -343,6 +343,10 @@ public class WebhookController {
                         isSurveyInProgress.remove(senderId);
                         currentSurveyQuestion.remove(senderId);
                         chatInteractionMetricsService.endInteraction(interaction);
+                        Relation relation = relationRepository.findByUserNumber(senderId)
+                                .orElseThrow(() -> new RuntimeException("No se encontró la relación para el usuario: " + senderId));
+                        relation.setActive(false);
+                        relationRepository.save(relation);
                         break;
                 }
             }
