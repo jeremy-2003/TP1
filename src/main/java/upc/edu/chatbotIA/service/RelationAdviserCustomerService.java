@@ -5,6 +5,8 @@ import upc.edu.chatbotIA.model.Adviser;
 import upc.edu.chatbotIA.model.RelationAdviserCustomer;
 import upc.edu.chatbotIA.repository.AdviserRepository;
 import upc.edu.chatbotIA.repository.RelationAdviserCustomerRepository;
+
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -57,6 +59,7 @@ public class RelationAdviserCustomerService {
 
     public void finalizarConversacion(RelationAdviserCustomer relacionAsesorCliente) {
         relacionAsesorCliente.setActive(false);
+        relacionAsesorCliente.setLastTimeInteraction(LocalDateTime.now());
         relationAdviserCustomerRepository.save(relacionAsesorCliente);
     }
 }

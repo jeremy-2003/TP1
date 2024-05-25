@@ -3,6 +3,7 @@ import java.io.File;
 import java.io.IOException;
 import java.security.GeneralSecurityException;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.*;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -41,6 +42,7 @@ public class WebhookController {
     private final AdviserRepository adviserRepository;
 
     private final SurveyResponseService surveyResponseService;
+    private final ChatInteractionMetricsService chatInteractionMetricsService;
 
     private Map<String, Boolean> isSurveyInProgress = new HashMap<>();
     private Map<String, Integer> currentSurveyQuestion = new HashMap<>();
@@ -50,7 +52,7 @@ public class WebhookController {
                              TranscriptionService transcriptionService, ChatGptService chatGptService, WhatsAppService whatsAppService,
                              SheetsService sheetsService, RelationRepository relationRepository, BlockedUserService blockedUserService,
                              RelationAdviserCustomerService relationAdviserCustomerService, SentimentAnalysisService sentimentAnalysisService,
-                             SurveyResponseService surveyResponseService, AdviserRepository adviserRepository) {
+                             SurveyResponseService surveyResponseService, AdviserRepository adviserRepository, ChatInteractionMetricsService chatInteractionMetricsService) {
         this.objectMapper = objectMapper;
         this.audioDownloader = audioDownloader;
         this.transcriptionService = transcriptionService;
@@ -63,6 +65,7 @@ public class WebhookController {
         this.sentimentAnalysisService = sentimentAnalysisService;
         this.surveyResponseService = surveyResponseService;
         this.adviserRepository = adviserRepository;
+        this.chatInteractionMetricsService = chatInteractionMetricsService;
     }
     private final Map<String, Integer> failedAttempts = new HashMap<>();
     private Map<String, Boolean> isFirstMessage = new HashMap<>();
@@ -107,6 +110,7 @@ public class WebhookController {
                                     relationRepository.save(relation);
                                 }
                                 whatsAppService.sendTextMessage(senderId, "Has finalizado la conversación con el cliente de número" + customerNumber + " y nombre " + relation.getName());
+
                                 return ResponseEntity.ok().build();
                             } else {
                                 // El asesor tiene una relación activa de atención
@@ -211,6 +215,15 @@ public class WebhookController {
         }
     }
     private void processMessage(String senderId, WhatsAppWebhookInboundMessage message) throws IOException, InterruptedException {
+        Optional<ChatInteractionMetrics> existingInteraction = chatInteractionMetricsService.findActiveInteraction(senderId);
+        ChatInteractionMetrics interaction;
+
+        if (existingInteraction.isPresent()) {
+            interaction = existingInteraction.get();
+        } else {
+            interaction = chatInteractionMetricsService.startInteraction(senderId);
+        }
+
         String messageType = String.valueOf(message.getType());
         if (messageType.equals("TEXT")) {
             WhatsAppWebhookInboundTextMessage textMessage = (WhatsAppWebhookInboundTextMessage) message;
@@ -225,24 +238,12 @@ public class WebhookController {
                     whatsAppService.sendTextMessage(senderId, userData);
                     isFirstMessage.put(senderId, false);
                 }
-            }
-            /*if (isSurveyInProgress.containsKey(senderId) && isSurveyInProgress.get(senderId)) {
-                int currentQuestion = currentSurveyQuestion.get(senderId);
-
-                if (currentQuestion == 6) {
-                    handleSurveyResponse6(senderId, text);
-                    whatsAppService.sendTextMessage(senderId, "¡Gracias por completar la encuesta!");
-                    isSurveyInProgress.put(senderId, false);
-                    isSurveyInProgress.remove(senderId);
-                    currentSurveyQuestion.remove(senderId);
-                }
-            }*/
-            else {
+            } else {
                 // Verificar si el usuario tiene una relación activa con un asesor
                 RelationAdviserCustomer relacionAsesorCliente = relationAdviserCustomerService.encontrarConversacionesActivas(senderId, true);
                 if (relacionAsesorCliente != null) {
                     // Reenviar el mensaje al asesor
-                    //whatsAppService.sendTextMessage(relacionAsesorCliente.getAdviserNumber(), "Mensaje del usuario " + senderId + ": " + text); //por ahora no se reenvia
+                    // whatsAppService.sendTextMessage(relacionAsesorCliente.getAdviserNumber(), "Mensaje del usuario " + senderId + ": " + text); //por ahora no se reenvia
                 } else {
                     String textasesor = textMessage.getText().toUpperCase();
                     if (textasesor.equals("ASESOR")) {
@@ -260,6 +261,8 @@ public class WebhookController {
                             // Desactivar el procesamiento de mensajes para este usuario y marcar que está esperando al asesor
                             isFirstMessage.put(senderId, false);
                             isWaitingForAdvisor.put(senderId, true);
+
+                            chatInteractionMetricsService.markInteractionAsRequestedAdvisor(interaction);
                         } else {
                             whatsAppService.sendTextMessage(senderId, "Lo sentimos, no hay asesores disponibles en este momento. Por favor, intente más tarde.");
                         }
@@ -267,12 +270,18 @@ public class WebhookController {
                         String analyzedResponse = sentimentAnalysisService.analyzeTextAndSaveEmotions(text);
                         JsonObject jsonObject = JsonParser.parseString(analyzedResponse).getAsJsonObject();
                         String emotion = jsonObject.get("sentimiento_predominante").getAsString();
-
+                        long startTime = System.currentTimeMillis();
                         ChatMessage chatMessage = chatGptService.getChatCompletion(senderId, text, emotion);
                         String responseText = chatMessage.getContent();
                         whatsAppService.sendTextMessage(senderId, responseText);
-                        // Verificar si el mensaje del cliente indica que ha resuelto su consulta o no necesita más ayuda
+                        long endTime = System.currentTimeMillis();
+                        long responseTime = endTime - startTime;
+                        chatInteractionMetricsService.updateAverageResponseTime(interaction, responseTime);
                         if (chatGptService.isResolutionMessage(text)) {
+                            // Verificar si el usuario no ha sido atendido por un asesor
+                            if (!interaction.isRequestedAdvisor()) {
+                                chatInteractionMetricsService.markInteractionAsResolvedInFirstContact(interaction);
+                            }
                             // Aquí inicia la encuesta
                             sendSurveyQuestion1(senderId);
                             isSurveyInProgress.put(senderId, true);
@@ -280,10 +289,9 @@ public class WebhookController {
                         }
                     }
                 }
-
             }
-
         } else if (messageType.equals("VOICE")) {
+            long startTime = System.currentTimeMillis();
             WhatsAppWebhookInboundVoiceMessage voiceMessage = (WhatsAppWebhookInboundVoiceMessage) message;
             String voiceUrl = voiceMessage.getUrl();
             // Descargar el audio desde la URL y guardar con extensión MP3
@@ -293,6 +301,9 @@ public class WebhookController {
             ChatMessage chatMessage = chatGptService.getChatCompletion(senderId, transcription, "");
             String responseText = chatMessage.getContent();
             whatsAppService.sendTextMessage(senderId, responseText);
+            long endTime = System.currentTimeMillis();
+            long responseTime = endTime - startTime;
+            chatInteractionMetricsService.updateAverageResponseTime(interaction, responseTime);
         } else if (messageType.equals("INTERACTIVE_LIST_REPLY")) {
             WhatsAppWebhookListReplyContent interactiveMessage = (WhatsAppWebhookListReplyContent)message;
             String selectedOptionId = interactiveMessage.getId();
@@ -331,6 +342,8 @@ public class WebhookController {
                         isSurveyInProgress.put(senderId, false);
                         isSurveyInProgress.remove(senderId);
                         currentSurveyQuestion.remove(senderId);
+                        chatInteractionMetricsService.endInteraction(interaction);
+                        break;
                 }
             }
         }
@@ -547,5 +560,9 @@ public class WebhookController {
         surveyResponse.setResponse(responseNumber);
         surveyResponse.setCreatedAt(LocalDateTime.now());
         surveyResponseService.saveSurveyResponse(surveyResponse);
+    }
+
+    private long calculateResponseTime(LocalDateTime startTime, LocalDateTime endTime) {
+        return ChronoUnit.MILLIS.between(startTime, endTime);
     }
 }
