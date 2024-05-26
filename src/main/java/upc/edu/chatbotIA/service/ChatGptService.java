@@ -100,10 +100,13 @@ public class ChatGptService {
                 "[INSTRUCCIONES]:\n" +
                         "- Actúa como un chatbot llamado 'TeleBuddy', encargado de la atención al cliente para servicios o proyectos de sector de Telecomunicaciones para la empresa Soe Industrial Eirl.\n" +
                         "- Responde utilizando únicamente la información proporcionada en la base de datos.\n" +
-                        "- Brinda información sobre los servicios de cable e internet ofrecidos por TelecomunicacionesCenter:\n" +
-                        "  - Planes de fibra óptica\n" +
-                        "  - Planes DSL\n" +
-                        "  - Cable satelital con 100 canales (extranjeros y nacionales)\n" +
+                        "- Brinda información sobre los servicios de telecomunicaciones ofrecidos por SOE Industrial E.I.R.L.:\n" +
+                        "  - Provisión de Internet de Banda Ancha: Ofrecimiento de servicios de internet de alta velocidad mediante tecnologías como fibra óptica y ADSL. Costos aproximados: S/ 70 - S/ 150 mensuales para fibra óptica, y S/ 65 - S/ 80 mensuales para ADSL.\n" +
+                        "  - Planes de Internet Personalizados: Diversos planes de internet con diferentes velocidades y capacidades de datos para hogares y pequeñas empresas. Costos aproximados: S/ 80 - S/ 150 mensuales, según el plan seleccionado.\n" +
+                        "  - Instalación y Mantenimiento de Infraestructura de Redes: Diseño, instalación y mantenimiento de redes LAN y WAN para garantizar conectividad estable y de alta velocidad. Costos aproximados promedios: S/ 500 - S/ 2000, dependiendo del alcance del proyecto.\n" +
+                        "  - Cableado Estructurado: Servicios de instalación de cableado estructurado para soportar redes de datos y telecomunicaciones. Costos aproximados promedios: S/ 300 - S/ 1500, según la complejidad de la instalación.\n" +
+                        "  - Consultoría en Infraestructura de Redes (CIR): Asesoramiento para el diseño, implementación y mejora de infraestructuras de telecomunicaciones. Costos aproximados promedios: S/ 1000 - S/ 5000, dependiendo del alcance de la consultoría.\n" +
+                        "  - Asesoría en Soluciones de Conectividad (ASC): Desarrollo de soluciones personalizadas para optimizar el uso de servicios de telecomunicaciones. Costos aproximados promedios: S/ 800 - S/ 3000, según las necesidades específicas del cliente.\n" +
                         "- Para contacto, compartir el número de WhatsApp: 994 283 802\n" +
                         "\n" +
                         "[OBLIGATORIO]:\n" +
@@ -112,6 +115,7 @@ public class ChatGptService {
                         "- Si la pregunta no está relacionada con los servicios o la información proporcionada, indica amablemente que no tienes información al respecto.\n" +
                         "- Limita tus respuestas a un máximo de 3 oraciones cortas y concisas.\n" +
                         "- Evita expandirte demasiado en detalles innecesarios y mantén las respuestas al punto.\n" +
+                        "- Intenta solucionar cualquier dificultad que se presente al usuario si está en tu poder. Si se necesita a una persona técnica, recomienda el número de WhatsApp o indica que escriban 'asesor' para contactar con un asesor.\n" +
                         "\n" +
                         "[EMOCIÓN DETECTADA]: " + emotion + "\n" +
                         "\n" +
@@ -138,7 +142,7 @@ public class ChatGptService {
         // Construir la solicitud de completado de chat
         ChatCompletionRequest completionRequest = ChatCompletionRequest.builder()
                 .messages(chatMessages)
-                .model("gpt-4o-2024-05-13")
+                .model("gpt-3.5-turbo-0125")
                 .build();
 
         // Enviar la solicitud al servicio de OpenAI y obtener la respuesta
@@ -190,8 +194,10 @@ public class ChatGptService {
         systemMessage.setRole("system");
         systemMessage.setContent(
                 "[INSTRUCCIONES]: Evalúa si la siguiente frase del cliente indica que su consulta ha sido resuelta o que ya no necesita más ayuda. " +
-                        "[OBLIGATORIO] Responde 'Sí' si la frase indica resolución o 'No' si la frase no indica resolución.\n\n" +
-                        "[FRASE]: " + userMessage
+                        "[OBLIGATORIO]: Responde 'Sí' si la frase indica resolución o satisfacción con la respuesta recibida, o 'No' si la frase no indica resolución.\n\n" +
+                        "[EJEMPLOS DE FRASES QUE INDICAN RESOLUCIÓN]: 'Gracias, eso era todo', 'Perfecto, solucionado', 'No necesito más ayuda, gracias', 'Todo claro, gracias'.\n\n" +
+                        "[FRASE]: " + userMessage +
+                        "\n\n[NOTA]: Si la frase solo menciona un agradecimiento sin indicar que la consulta está resuelta o que ya no necesita ayuda, responde 'No'."
         );
         List<ChatMessage> chatMessages = new ArrayList<>();
         chatMessages.add(systemMessage);
@@ -204,15 +210,18 @@ public class ChatGptService {
         return assistantMessage.getContent().trim().equalsIgnoreCase("Sí");
     }
 
+
     public boolean isTicketCreationRequired(String userMessage) {
         ChatMessage systemMessage = new ChatMessage();
         systemMessage.setRole("system");
         systemMessage.setContent(
-                "[INSTRUCCIONES]: Evalúa si el siguiente mensaje del cliente solicita la creación de un nuevo ticket de soporte." +
-                        "[OBLIGATORIO] Responde 'Sí' si el mensaje indica la necesidad de crear un nuevo ticket o 'No' si no se requiere, incluyendo situaciones donde el cliente se refiere a tickets ya existentes.\n\n" +
+                "[INSTRUCCIONES]: Evalúa si el siguiente mensaje del cliente solicita explícitamente la creación de un nuevo ticket de soporte." +
+                        "[OBLIGATORIO]: Responde 'Sí' si el mensaje indica claramente la necesidad de crear un nuevo ticket o 'No' si no se requiere, incluyendo situaciones donde el cliente se refiere a tickets ya existentes.\n" +
+                        "[NOTA]: Si el mensaje del cliente solo menciona problemas o solicitudes de información sin pedir explícitamente la creación de un nuevo ticket, responde 'No'.\n\n" +
                         "[MENSAJE]: " + userMessage +
                         "\n\n[NOTA]: Si el mensaje del cliente solo solicita información sobre el estado de un ticket existente, responde 'No'."
         );
+
         List<ChatMessage> chatMessages = new ArrayList<>();
         chatMessages.add(systemMessage);
         chatMessages.add(new ChatMessage("user", userMessage));

@@ -336,9 +336,9 @@ public class WebhookController {
                     }
                 }
             }
-        } else if (messageType.equals("VOICE")) {
+        } else if (messageType.equals("AUDIO")) {
             long startTime = System.currentTimeMillis();
-            WhatsAppWebhookInboundVoiceMessage voiceMessage = (WhatsAppWebhookInboundVoiceMessage) message;
+            WhatsAppWebhookInboundAudioMessage voiceMessage = (WhatsAppWebhookInboundAudioMessage) message;
             String voiceUrl = voiceMessage.getUrl();
             // Descargar el audio desde la URL y guardar con extensión MP3
             File mp3File = audioDownloader.downloadAudio(voiceUrl);
