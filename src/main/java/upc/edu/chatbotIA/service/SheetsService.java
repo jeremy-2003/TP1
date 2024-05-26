@@ -13,9 +13,9 @@ import com.google.api.client.util.store.FileDataStoreFactory;
 import com.google.api.services.sheets.v4.Sheets;
 import com.google.api.services.sheets.v4.SheetsScopes;
 import com.google.api.services.sheets.v4.model.AppendValuesResponse;
-import com.google.api.services.sheets.v4.model.UpdateValuesResponse;
 import com.google.api.services.sheets.v4.model.ValueRange;
 import org.springframework.stereotype.Service;
+import upc.edu.chatbotIA.model.ServiceProduct;
 import upc.edu.chatbotIA.model.Ticket;
 import java.time.format.DateTimeFormatter;
 import java.io.FileNotFoundException;
@@ -24,13 +24,11 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.security.GeneralSecurityException;
 import java.time.LocalDateTime;
-import java.time.format.DateTimeParseException;
 import java.util.*;
 import java.util.stream.Collectors;
 
 @Service
 public class SheetsService {
-    private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd hh:mm:ss a");
     private static final String APPLICATION_NAME = "Google Sheets API Java Quickstart";
     private static final JsonFactory JSON_FACTORY = GsonFactory.getDefaultInstance();
     private static final String TOKENS_DIRECTORY_PATH = "tokens";
@@ -157,6 +155,51 @@ public class SheetsService {
                     LocalDateTime createdAt = LocalDateTime.parse(row.get(5).toString(), formatter);
                     LocalDateTime updatedAt = LocalDateTime.parse(row.get(6).toString(), formatter);
                     return new Ticket(ticketId, ticketSenderId, description, urgency, status, createdAt, updatedAt);
+                })
+                .collect(Collectors.toList());
+    }
+
+    public List<ServiceProduct> getServiciosByRucAndEstado(String ruc) throws IOException, GeneralSecurityException {
+        System.out.println("RUC: " + ruc);
+        final NetHttpTransport HTTP_TRANSPORT = GoogleNetHttpTransport.newTrustedTransport();
+        Sheets sheetsService = new Sheets.Builder(HTTP_TRANSPORT, JSON_FACTORY, getCredentials(HTTP_TRANSPORT))
+                .setApplicationName(APPLICATION_NAME)
+                .build();
+
+        // Obtener la última fila con datos en la hoja de cálculo
+        String range = "DB_EMPRESA_SERVICIOS";
+        ValueRange response = sheetsService.spreadsheets().values()
+                .get(SPREADSHEET_ID, range)
+                .execute();
+
+        List<List<Object>> values = response.getValues();
+        if (values == null || values.isEmpty()) {
+            System.out.println("No data found.");
+            return Collections.emptyList();
+        }
+
+        // Determinar el rango dinámico basado en la cantidad de filas
+        int lastRow = values.size();
+        String dynamicRange = "DB_EMPRESA_SERVICIOS!A1:G" + lastRow;
+
+        // Obtener los datos del rango dinámico
+        ValueRange dynamicResponse = sheetsService.spreadsheets().values()
+                .get(SPREADSHEET_ID, dynamicRange)
+                .execute();
+
+        List<List<Object>> dynamicValues = dynamicResponse.getValues();
+
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd hh:mm:ss a", Locale.ENGLISH);
+        return dynamicValues.stream()
+                .filter(row -> row.size() >= 6 && ruc.equals(row.get(0).toString()) && ("ACTIVO".equalsIgnoreCase(row.get(2).toString()) || "EN PROCESO".equalsIgnoreCase(row.get(2).toString())))
+                .map(row -> {
+                    String Ruc = row.get(0).toString();
+                    String servicio = row.get(1).toString();
+                    String servicioEstado = row.get(2).toString();
+                    LocalDateTime fechaPago = row.size() > 3 && !row.get(3).toString().isEmpty() ? LocalDateTime.parse(row.get(3).toString(), formatter) : null;
+                    String velocidad = row.size() > 4 && !row.get(4).toString().isEmpty() ? row.get(4).toString() : "No corresponde para este servicio";
+                    String precio = row.size() > 5 && !row.get(5).toString().isEmpty() ? row.get(5).toString() : "No corresponde para este servicio";
+                    return new ServiceProduct(Ruc, servicio, servicioEstado, fechaPago, velocidad, precio);
                 })
                 .collect(Collectors.toList());
     }

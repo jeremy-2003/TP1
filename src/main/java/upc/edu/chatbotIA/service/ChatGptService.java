@@ -7,6 +7,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import upc.edu.chatbotIA.model.Conversation;
 import upc.edu.chatbotIA.model.Relation;
+import upc.edu.chatbotIA.model.ServiceProduct;
 import upc.edu.chatbotIA.model.Ticket;
 import upc.edu.chatbotIA.repository.ConversationRepository;
 import upc.edu.chatbotIA.repository.RelationRepository;
@@ -21,16 +22,19 @@ import java.util.Optional;
 @Service
 public class ChatGptService {
     private final OpenAiService openAiService;
+    private final ServiceProductService serviceProductService;
+
     private final ConversationRepository conversationRepository;
     private final RelationRepository relationRepository;
     private final SheetsService sheetsService;
     @Autowired
     public ChatGptService(OpenAiService openAiService, ConversationRepository conversationRepository, RelationRepository relationRepository,
-                          SheetsService sheetsService) {
+                          SheetsService sheetsService, ServiceProductService serviceProductService) {
         this.openAiService = openAiService;
         this.conversationRepository = conversationRepository;
         this.relationRepository = relationRepository;
         this.sheetsService = sheetsService;
+        this.serviceProductService = serviceProductService;
     }
 
     public ChatMessage getChatCompletion(String userId, String userMessage, String emotion) {
@@ -39,7 +43,7 @@ public class ChatGptService {
         Optional<Relation> relationOptional = relationRepository.findByUserNumber(userId);
         Relation relation = relationOptional.get();
         Long relationUserId = relation.getUserId();
-
+        String ruc = relation.getRuc();
         // Verificar si relationUserId es null
         StringBuilder ticketsInfo = new StringBuilder();
         if (relationUserId == null) {
@@ -69,11 +73,32 @@ public class ChatGptService {
                 ticketsInfo.append("No se encontraron tickets para el usuario.\n");
             }
         }
+        // Construir la información de los servicios activos para incluirla en el prompt
+        StringBuilder activeServicesInfo = new StringBuilder();
+        if (ruc != null) {
+            // Obtener los servicios activos del cliente
+            List<ServiceProduct> activeServices = serviceProductService.getServiceProductsByRucAndEstado(ruc);
+
+            if (!activeServices.isEmpty()) {
+                activeServicesInfo.append("Servicios activos del cliente:\n");
+                for (ServiceProduct service : activeServices) {
+                    activeServicesInfo.append("- Servicio: ").append(service.getNombre())
+                            .append(", Velocidad: ").append(service.getVelocidad())
+                            .append(", Precio: ").append(service.getPrecio())
+                            .append(", Fecha de pago: ").append(service.getFechaPago())
+                            .append("\n");
+                }
+            } else {
+                activeServicesInfo.append("No se encontraron servicios activos para el cliente.\n");
+            }
+        } else {
+            activeServicesInfo.append("El usuario no tiene ningún servicio porque no es cliente.\n");
+        }
         ChatMessage systemMessage = new ChatMessage();
         systemMessage.setRole("system");
         systemMessage.setContent(
                 "[INSTRUCCIONES]:\n" +
-                        "- Actúa como un chatbot llamado 'TeleBuddy', encargado de la atención al cliente para la empresa TelecomunicacionesCenter.\n" +
+                        "- Actúa como un chatbot llamado 'TeleBuddy', encargado de la atención al cliente para servicios o proyectos de sector de Telecomunicaciones para la empresa Soe Industrial Eirl.\n" +
                         "- Responde utilizando únicamente la información proporcionada en la base de datos.\n" +
                         "- Brinda información sobre los servicios de cable e internet ofrecidos por TelecomunicacionesCenter:\n" +
                         "  - Planes de fibra óptica\n" +
@@ -95,7 +120,9 @@ public class ChatGptService {
                         "- Adapta el tono y estilo de comunicación según la emoción identificada para brindar una respuesta más empática y acorde al estado emocional del cliente.\n" +
                         "\n" +
                         "[TICKETS DEL USUARIO]:\n" +
-                        ticketsInfo.toString()
+                        ticketsInfo.toString() +
+                        "[SERVICIOS ACTIVOS DEL CLIENTE]:\n" +
+                        activeServicesInfo.toString()
         );
         // Construir la lista de mensajes de chat incluyendo el mensaje del sistema y el historial de conversación
         List<ChatMessage> chatMessages = new ArrayList<>();
@@ -181,7 +208,7 @@ public class ChatGptService {
         ChatMessage systemMessage = new ChatMessage();
         systemMessage.setRole("system");
         systemMessage.setContent(
-                "[INSTRUCCIONES]: Evalúa si el siguiente mensaje del cliente requiere la creación de un nuevo ticket de soporte." +
+                "[INSTRUCCIONES]: Evalúa si el siguiente mensaje del cliente solicita la creación de un nuevo ticket de soporte." +
                         "[OBLIGATORIO] Responde 'Sí' si el mensaje indica la necesidad de crear un nuevo ticket o 'No' si no se requiere, incluyendo situaciones donde el cliente se refiere a tickets ya existentes.\n\n" +
                         "[MENSAJE]: " + userMessage +
                         "\n\n[NOTA]: Si el mensaje del cliente solo solicita información sobre el estado de un ticket existente, responde 'No'."

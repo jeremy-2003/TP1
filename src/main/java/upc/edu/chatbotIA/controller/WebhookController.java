@@ -87,6 +87,13 @@ public class WebhookController {
             for (WhatsAppWebhookInboundMessageData messageData : messages.getResults()) {
                 String senderId = messageData.getFrom();
                 // Verificar si el remitente es un asesor
+                Optional<ChatInteractionMetrics> existingInteraction = chatInteractionMetricsService.findActiveInteraction(senderId);
+                ChatInteractionMetrics interaction;
+                if (existingInteraction.isPresent()) {
+                    interaction = existingInteraction.get();
+                } else {
+                    interaction = chatInteractionMetricsService.startInteraction(senderId);
+                }
                 String adviserMessage = null;
                 WhatsAppWebhookInboundMessage messageAdviser = messageData.getMessage();
                 String messageTypeAdviser = String.valueOf(messageAdviser.getType());
@@ -161,9 +168,13 @@ public class WebhookController {
                         relationService.save(relation);
                     } else if (!relation.getActive() && relation.getExpirationTime().isAfter(now)) {
                         // Si la relación está inactiva pero no ha expirado, enviar un saludo personalizado y procesar el mensaje normalmente
+                        long startTime = System.currentTimeMillis();
                         String welcomeMessage = "Hola " + relation.getName() + ", ¡bienvenido de nuevo! ¿En qué podemos ayudarte?";
                         whatsAppService.sendTextMessage(senderId, welcomeMessage);
                         // Actualizar la marca de tiempo de interacción y reactivar la relación
+                        long endTime = System.currentTimeMillis();
+                        long responseTime = endTime - startTime;
+                        chatInteractionMetricsService.updateAverageResponseTime(interaction, responseTime);
                         relation.setLastInteractionTime(now);
                         relation.setActive(true);
                         relationService.save(relation);
