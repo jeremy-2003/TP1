@@ -13,8 +13,10 @@ public class Relation {
     @Id
     private Long id;
     private String userNumber;
-    private Integer dni;
+    private Long userId;
     private String name;
+    private String ruc;
+    private String company;
     private LocalDateTime expirationTime;
     private LocalDateTime lastInteractionTime;
     private Boolean active;

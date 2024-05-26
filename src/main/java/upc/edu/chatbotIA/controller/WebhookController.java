@@ -5,14 +5,17 @@ import java.security.GeneralSecurityException;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
+import java.util.logging.Logger;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.infobip.model.*;
 
 import com.theokanning.openai.completion.chat.ChatMessage;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
@@ -25,7 +28,7 @@ import upc.edu.chatbotIA.util.AudioDownloader;
 
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
-
+@Transactional
 @RestController("/webhook")
 public class WebhookController {
     private final RelationAdviserCustomerService relationAdviserCustomerService;
@@ -37,38 +40,43 @@ public class WebhookController {
     private final SheetsService sheetsService;
     private final SentimentAnalysisService sentimentAnalysisService;
 
-    private final RelationRepository relationRepository;
+    private final RelationService relationService;
     private final BlockedUserService blockedUserService;
     private final AdviserRepository adviserRepository;
 
     private final SurveyResponseService surveyResponseService;
     private final ChatInteractionMetricsService chatInteractionMetricsService;
+    private final TicketService ticketService;
 
     private Map<String, Boolean> isSurveyInProgress = new HashMap<>();
+    private Map<String, Boolean> isTicketCreationInProgress = new HashMap<>();
     private Map<String, Integer> currentSurveyQuestion = new HashMap<>();
 
     @Autowired
     public WebhookController(ObjectMapper objectMapper, AudioDownloader audioDownloader,
                              TranscriptionService transcriptionService, ChatGptService chatGptService, WhatsAppService whatsAppService,
-                             SheetsService sheetsService, RelationRepository relationRepository, BlockedUserService blockedUserService,
+                             SheetsService sheetsService, RelationService relationService, BlockedUserService blockedUserService,
                              RelationAdviserCustomerService relationAdviserCustomerService, SentimentAnalysisService sentimentAnalysisService,
-                             SurveyResponseService surveyResponseService, AdviserRepository adviserRepository, ChatInteractionMetricsService chatInteractionMetricsService) {
+                             SurveyResponseService surveyResponseService, AdviserRepository adviserRepository, ChatInteractionMetricsService chatInteractionMetricsService,
+                             TicketService ticketService) {
         this.objectMapper = objectMapper;
         this.audioDownloader = audioDownloader;
         this.transcriptionService = transcriptionService;
         this.chatGptService = chatGptService;
         this.whatsAppService = whatsAppService;
         this.sheetsService = sheetsService;
-        this.relationRepository = relationRepository;
+        this.relationService = relationService;
         this.blockedUserService = blockedUserService;
         this.relationAdviserCustomerService = relationAdviserCustomerService;
         this.sentimentAnalysisService = sentimentAnalysisService;
         this.surveyResponseService = surveyResponseService;
         this.adviserRepository = adviserRepository;
         this.chatInteractionMetricsService = chatInteractionMetricsService;
+        this.ticketService = ticketService;
     }
     private final Map<String, Integer> failedAttempts = new HashMap<>();
     private Map<String, Boolean> isFirstMessage = new HashMap<>();
+    private Map<String, String> conversationState = new HashMap<>();
     private Map<String, Boolean> isWaitingForAdvisor = new HashMap<>();
 
     @PostMapping("/incoming-whatsapp")
@@ -99,7 +107,7 @@ public class WebhookController {
                                 // Enviar mensaje al cliente indicando que está de vuelta con el chatbot
                                 String welcomeBackMessage = "Hola, soy TeleBuddy. Estás de vuelta conmigo. ¿En qué más puedo ayudarte?";
                                 whatsAppService.sendTextMessage(customerNumber, welcomeBackMessage);
-                                Relation relation = relationRepository.findByUserNumber(customerNumber).orElse(null);
+                                Relation relation = relationService.findByUserNumber(customerNumber).orElse(null);
                                 if (relation != null) {
                                     LocalDateTime now = LocalDateTime.now();
                                     relation.setLastInteractionTime(LocalDateTime.now());
@@ -107,7 +115,7 @@ public class WebhookController {
                                     if (relation.getLastInteractionTime().isAfter(expirationThreshold)) {
                                         relation.setExpirationTime(now.plusDays(30)); // Extender la fecha de expiración por 30 días más
                                     }
-                                    relationRepository.save(relation);
+                                    relationService.save(relation);
                                 }
                                 whatsAppService.sendTextMessage(senderId, "Has finalizado la conversación con el cliente de número" + customerNumber + " y nombre " + relation.getName());
 
@@ -126,7 +134,7 @@ public class WebhookController {
                         }
                     }
                 }
-                Optional<Relation> existingRelation = relationRepository.findByUserNumber(senderId);
+                Optional<Relation> existingRelation = relationService.findByUserNumber(senderId);
                 if (blockedUserService.isUserBlocked(senderId)) {
                     whatsAppService.sendTextMessage(senderId, "Estás temporalmente bloqueado. Por favor, espera unos minutos antes de intentar enviar mensajes nuevamente.");
                     return ResponseEntity.ok().build();
@@ -150,7 +158,7 @@ public class WebhookController {
                         if (relation.getLastInteractionTime().isAfter(expirationThreshold)) {
                             relation.setExpirationTime(now.plusDays(30)); // Extender la fecha de expiración por 30 días más
                         }
-                        relationRepository.save(relation);
+                        relationService.save(relation);
                     } else if (!relation.getActive() && relation.getExpirationTime().isAfter(now)) {
                         // Si la relación está inactiva pero no ha expirado, enviar un saludo personalizado y procesar el mensaje normalmente
                         String welcomeMessage = "Hola " + relation.getName() + ", ¡bienvenido de nuevo! ¿En qué podemos ayudarte?";
@@ -158,10 +166,11 @@ public class WebhookController {
                         // Actualizar la marca de tiempo de interacción y reactivar la relación
                         relation.setLastInteractionTime(now);
                         relation.setActive(true);
-                        relationRepository.save(relation);
-                    } else {
+                        relationService.save(relation);
+                    }
+                    else {
                         // Si la relación ha expirado, eliminar la relación y solicitar el DNI nuevamente
-                        relationRepository.delete(relation);
+                        relationService.delete(relation);
                         if (!isFirstMessage.containsKey(senderId)) {
                             isFirstMessage.put(senderId, true);
                             sendWelcomeMessage(senderId);
@@ -183,7 +192,8 @@ public class WebhookController {
                                 if (userData.equals("Vemos que no eres cliente nuestro. Podrias por favor brindarnos tu nombre para continuar con tu consulta.")) {
                                     whatsAppService.sendTextMessage(senderId, userData);
                                     isFirstMessage.put(senderId, false);
-                                    saveRelation(senderId, text, "", false); // Guardar la relación con el DNI proporcionado
+                                    conversationState.put(senderId, "AWAITING_NAME");
+                                    saveRelation(senderId,"", "", "", "", false);
                                 } else if (userData.equals("El DNI ingresado no es válido. Por favor, ingresa un número de DNI de 8 dígitos.")) {
                                     whatsAppService.sendTextMessage(senderId, userData);
                                     // Mantener el estado de primer mensaje para volver a solicitar el DNI
@@ -194,14 +204,18 @@ public class WebhookController {
                                     isFirstMessage.put(senderId, false);
                                 }
                             } else {
-                                Optional<Relation> relationToUpdate = relationRepository.findByUserNumber(senderId);
-                                if (relationToUpdate.isPresent()) {
-                                    Relation relation = relationToUpdate.get();
-                                    relation.setName(text);
-                                    relationRepository.save(relation);
-                                    String welcomeMessage = "Hola " + text + ", gracias por proporcionarnos tu nombre. ¿En qué podemos ayudarte?";
-                                    whatsAppService.sendTextMessage(senderId, welcomeMessage);
-                                    isFirstMessage.remove(senderId);
+                                String state = conversationState.get(senderId);
+                                if (state != null && state.equals("AWAITING_NAME")) {
+                                    String name = text;
+                                    whatsAppService.sendTextMessage(senderId, "Gracias, " + name + ". Comentanos en que podemos ayudarte.");
+                                    Optional<Relation> relationToUpdate = relationService.findByUserNumber(senderId);
+                                    if (relationToUpdate.isPresent()) {
+                                        Relation relation = relationToUpdate.get();
+                                        relation.setName(name);
+                                        relationService.save(relation);
+                                        conversationState.remove(senderId);
+                                        isFirstMessage.remove(senderId);
+                                    }
                                 }
                             }
                         }
@@ -217,7 +231,6 @@ public class WebhookController {
     private void processMessage(String senderId, WhatsAppWebhookInboundMessage message) throws IOException, InterruptedException {
         Optional<ChatInteractionMetrics> existingInteraction = chatInteractionMetricsService.findActiveInteraction(senderId);
         ChatInteractionMetrics interaction;
-
         if (existingInteraction.isPresent()) {
             interaction = existingInteraction.get();
         } else {
@@ -228,6 +241,7 @@ public class WebhookController {
         if (messageType.equals("TEXT")) {
             WhatsAppWebhookInboundTextMessage textMessage = (WhatsAppWebhookInboundTextMessage) message;
             String text = textMessage.getText();
+
             if (isFirstMessage.containsKey(senderId) && isFirstMessage.get(senderId)) {
                 String userData = searchDniInExcel(senderId, text);
                 if (userData.equals("El DNI ingresado no es válido. Por favor, ingresa un número de DNI de 8 dígitos.")) {
@@ -267,25 +281,46 @@ public class WebhookController {
                             whatsAppService.sendTextMessage(senderId, "Lo sentimos, no hay asesores disponibles en este momento. Por favor, intente más tarde.");
                         }
                     } else {
-                        String analyzedResponse = sentimentAnalysisService.analyzeTextAndSaveEmotions(text);
-                        JsonObject jsonObject = JsonParser.parseString(analyzedResponse).getAsJsonObject();
-                        String emotion = jsonObject.get("sentimiento_predominante").getAsString();
-                        long startTime = System.currentTimeMillis();
-                        ChatMessage chatMessage = chatGptService.getChatCompletion(senderId, text, emotion);
-                        String responseText = chatMessage.getContent();
-                        whatsAppService.sendTextMessage(senderId, responseText);
-                        long endTime = System.currentTimeMillis();
-                        long responseTime = endTime - startTime;
-                        chatInteractionMetricsService.updateAverageResponseTime(interaction, responseTime);
-                        if (chatGptService.isResolutionMessage(text)) {
-                            // Verificar si el usuario no ha sido atendido por un asesor
-                            if (!interaction.isRequestedAdvisor()) {
-                                chatInteractionMetricsService.markInteractionAsResolvedInFirstContact(interaction);
+                        if (isTicketCreationInProgress.containsKey(senderId) && isTicketCreationInProgress.get(senderId)) {
+                            // Procesar el mensaje como descripción del problema
+                            Optional<Relation> relationObtain = relationService.findByUserNumber(senderId);
+                            Relation relation = relationObtain.get();
+                            String userId = relation.getUserId().toString();
+                            String description = text;
+                            String urgency = chatGptService.evaluateUrgency(text);
+                            ticketService.createNewTicket(userId, description, urgency, "PENDIENTE");
+                            isTicketCreationInProgress.put(senderId, false); // Limpiar el estado de espera de descripción
+                            whatsAppService.sendTextMessage(senderId, "Tu ticket ha sido creado con éxito. Un asesor se pondrá en contacto contigo pronto.");
+                        } else if (chatGptService.isTicketCreationRequired(text)) {
+                            Optional<Relation> relationObtain = relationService.findByUserNumber(senderId);
+                            Relation relation = relationObtain.get();
+                            if (relation.getUserId() != null) {
+                                isTicketCreationInProgress.put(senderId, true);
+                                whatsAppService.sendTextMessage(senderId, "Por favor podrias indicar la descripcion del problema");
+                            }/*else{
+                            whatsAppService.sendTextMessage(senderId, "Lo sentimos, como no eres ningun cliente no puedes generar tickets");
+                        }*/
+                        } else {
+                            String analyzedResponse = sentimentAnalysisService.analyzeTextAndSaveEmotions(text);
+                            JsonObject jsonObject = JsonParser.parseString(analyzedResponse).getAsJsonObject();
+                            String emotion = jsonObject.get("sentimiento_predominante").getAsString();
+                            long startTime = System.currentTimeMillis();
+                            ChatMessage chatMessage = chatGptService.getChatCompletion(senderId, text, emotion);
+                            String responseText = chatMessage.getContent();
+                            whatsAppService.sendTextMessage(senderId, responseText);
+                            long endTime = System.currentTimeMillis();
+                            long responseTime = endTime - startTime;
+                            chatInteractionMetricsService.updateAverageResponseTime(interaction, responseTime);
+                            if (chatGptService.isResolutionMessage(text)) {
+                                // Verificar si el usuario no ha sido atendido por un asesor
+                                if (!interaction.isRequestedAdvisor()) {
+                                    chatInteractionMetricsService.markInteractionAsResolvedInFirstContact(interaction);
+                                }
+                                // Aquí inicia la encuesta
+                                sendSurveyQuestion1(senderId);
+                                isSurveyInProgress.put(senderId, true);
+                                currentSurveyQuestion.put(senderId, 1);
                             }
-                            // Aquí inicia la encuesta
-                            sendSurveyQuestion1(senderId);
-                            isSurveyInProgress.put(senderId, true);
-                            currentSurveyQuestion.put(senderId, 1);
                         }
                     }
                 }
@@ -305,7 +340,7 @@ public class WebhookController {
             long responseTime = endTime - startTime;
             chatInteractionMetricsService.updateAverageResponseTime(interaction, responseTime);
         } else if (messageType.equals("INTERACTIVE_LIST_REPLY")) {
-            WhatsAppWebhookListReplyContent interactiveMessage = (WhatsAppWebhookListReplyContent)message;
+            WhatsAppWebhookListReplyContent interactiveMessage = (WhatsAppWebhookListReplyContent) message;
             String selectedOptionId = interactiveMessage.getId();
             if (isSurveyInProgress.containsKey(senderId) && isSurveyInProgress.get(senderId)) {
                 int currentQuestion = currentSurveyQuestion.get(senderId);
@@ -343,15 +378,24 @@ public class WebhookController {
                         isSurveyInProgress.remove(senderId);
                         currentSurveyQuestion.remove(senderId);
                         chatInteractionMetricsService.endInteraction(interaction);
-                        Relation relation = relationRepository.findByUserNumber(senderId)
+                        System.out.println("Buscando la relación para el usuario: " + senderId);
+                        Relation relation = relationService.findByUserNumber(senderId)
                                 .orElseThrow(() -> new RuntimeException("No se encontró la relación para el usuario: " + senderId));
+                        System.out.println("Relación encontrada: " + relation);
+
+                        // Log antes de cambiar el estado
+                        System.out.println("Cambiando el estado de la relación a inactivo.");
                         relation.setActive(false);
-                        relationRepository.save(relation);
+
+                        // Guardar y verificar
+                        Relation savedRelation = relationService.save(relation);
+                        System.out.println("Relación guardada: " + savedRelation);
                         break;
                 }
             }
         }
     }
+
     private void sendWelcomeMessage(String senderId) {
         // Envía un mensaje de bienvenida y solicita el DNI
         String welcomeMessage = "¡Bienvenido! Por favor, ingresa tu número de DNI:";
@@ -375,9 +419,12 @@ public class WebhookController {
 
             List<List<Object>> excelData = sheetsService.connectToGoogleSheets();
             for (List<Object> row : excelData) {
-                if (row.size() > 2 && row.get(2) instanceof String && row.get(2).equals(dni)) {
-                    String name = row.get(0) + " " + row.get(1);
-                    saveRelation(senderId, dni, name, true); // Guardar relación en la base de datos
+                if (row.size() > 4 && row.get(4) instanceof String && row.get(3).equals(dni)) {
+                    String userId = row.get(0).toString();
+                    String name = row.get(1) + " " + row.get(2);
+                    String ruc = row.get(4).toString();
+                    String companyName = row.get(5).toString();
+                    saveRelation(senderId, userId, name, ruc, companyName, true);
                     String userData = "Hola " + name + ", es un gusto que te comuniques con nosotros. ¿En qué podemos ayudarte?";
                     return userData;
                 }
@@ -388,16 +435,20 @@ public class WebhookController {
         return "Vemos que no eres cliente nuestro. Podrias por favor brindarnos tu nombre para continuar con tu consulta.";
     }
 
-    private void saveRelation(String senderId, String dni, String name, Boolean client) {
+    private void saveRelation(String senderId, String userId, String name, String ruc, String companyName, Boolean client) {
         Relation relation = new Relation();
         relation.setUserNumber(senderId);
-        relation.setDni(Integer.parseInt(dni));
+        if (!userId.isEmpty()) {
+            relation.setUserId(Long.parseLong(userId));
+        }
         relation.setName(name);
+        relation.setRuc(ruc);
+        relation.setCompany(companyName);
         relation.setExpirationTime(LocalDateTime.now().plusMinutes(5));
         relation.setActive(true);
         relation.setLastInteractionTime(LocalDateTime.now());
         relation.setClient(client);
-        relationRepository.save(relation);
+        relationService.save(relation);
     }
 
     private void guardarRelacionAsesorCliente(String customerId, String adviserNumber) {
@@ -411,7 +462,7 @@ public class WebhookController {
     }
 
     private String getCustomerName(String senderId) {
-        Optional<Relation> relationOptional = relationRepository.findByUserNumber(senderId);
+        Optional<Relation> relationOptional = relationService.findByUserNumber(senderId);
         if (relationOptional.isPresent()) {
             Relation relation = relationOptional.get();
             return relation.getName();

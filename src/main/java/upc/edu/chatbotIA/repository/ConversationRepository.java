@@ -3,11 +3,12 @@ package upc.edu.chatbotIA.repository;
 import org.springframework.data.jdbc.repository.query.Query;
 import org.springframework.data.repository.CrudRepository;
 import org.springframework.data.repository.query.Param;
+import org.springframework.stereotype.Repository;
 import upc.edu.chatbotIA.model.Conversation;
 
 import java.time.LocalDateTime;
 import java.util.List;
-
+@Repository
 public interface ConversationRepository extends CrudRepository<Conversation, Long> {
 
     @Query("SELECT * FROM conversation WHERE user_number = :userNumber ORDER BY timestamp ASC")

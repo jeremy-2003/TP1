@@ -3,10 +3,11 @@ package upc.edu.chatbotIA.repository;
 import org.springframework.data.jdbc.repository.query.Query;
 import org.springframework.data.repository.CrudRepository;
 import org.springframework.data.repository.query.Param;
+import org.springframework.stereotype.Repository;
 import upc.edu.chatbotIA.model.RelationAdviserCustomer;
 
 import java.util.List;
-
+@Repository
 public interface RelationAdviserCustomerRepository extends CrudRepository<RelationAdviserCustomer, Long> {
     @Query("SELECT * FROM relation_adviser_customer WHERE user_number = :userNumber AND active = :active")
     RelationAdviserCustomer findByUserNumberAndActive(@Param("userNumber") String userNumber, @Param("active") Boolean active);
