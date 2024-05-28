@@ -2,10 +2,13 @@ package upc.edu.chatbotIA.controller;
 import java.io.File;
 import java.io.IOException;
 import java.security.GeneralSecurityException;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.logging.Logger;
+import java.util.stream.Collectors;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.infobip.model.*;
@@ -47,9 +50,17 @@ public class WebhookController {
     private final SurveyResponseService surveyResponseService;
     private final ChatInteractionMetricsService chatInteractionMetricsService;
     private final TicketService ticketService;
-
-    private Map<String, Boolean> isSurveyInProgress = new HashMap<>();
+    private final AppointmentsService appointmentsService;
+    private final Map<String, Integer> failedAttempts = new HashMap<>();
+    private Map<String, String> conversationState = new HashMap<>();
+    private Map<String, String> selectedDayMap = new HashMap<>();
+    private Map<String, String> selectedTimeMap = new HashMap<>();
+    private Map<String, Boolean> isWaitingForVisitReason = new HashMap<>();
+    private Map<String, String> selectedVisitReasonMap = new HashMap<>();
+    private Map<String, Boolean> isFirstMessage = new HashMap<>();
     private Map<String, Boolean> isTicketCreationInProgress = new HashMap<>();
+    private Map<String, Boolean> isWaitingForAdvisor = new HashMap<>();
+    private Map<String, Boolean> isSurveyInProgress = new HashMap<>();
     private Map<String, Integer> currentSurveyQuestion = new HashMap<>();
 
     @Autowired
@@ -58,7 +69,7 @@ public class WebhookController {
                              SheetsService sheetsService, RelationService relationService, BlockedUserService blockedUserService,
                              RelationAdviserCustomerService relationAdviserCustomerService, SentimentAnalysisService sentimentAnalysisService,
                              SurveyResponseService surveyResponseService, AdviserRepository adviserRepository, ChatInteractionMetricsService chatInteractionMetricsService,
-                             TicketService ticketService) {
+                             TicketService ticketService, AppointmentsService appointmentsService) {
         this.objectMapper = objectMapper;
         this.audioDownloader = audioDownloader;
         this.transcriptionService = transcriptionService;
@@ -73,11 +84,8 @@ public class WebhookController {
         this.adviserRepository = adviserRepository;
         this.chatInteractionMetricsService = chatInteractionMetricsService;
         this.ticketService = ticketService;
+        this.appointmentsService = appointmentsService;
     }
-    private final Map<String, Integer> failedAttempts = new HashMap<>();
-    private Map<String, Boolean> isFirstMessage = new HashMap<>();
-    private Map<String, String> conversationState = new HashMap<>();
-    private Map<String, Boolean> isWaitingForAdvisor = new HashMap<>();
 
     @PostMapping("/incoming-whatsapp")
     public ResponseEntity<Void> receiveWhatsApp(@RequestBody String requestBody) {
@@ -263,6 +271,25 @@ public class WebhookController {
                     whatsAppService.sendTextMessage(senderId, userData);
                     isFirstMessage.put(senderId, false);
                 }
+            } else if (isWaitingForVisitReason.containsKey(senderId) && isWaitingForVisitReason.get(senderId)) {
+                String visitReason = text;
+                selectedVisitReasonMap.put(senderId, visitReason);
+                // Clasificar el motivo de la visita
+                String classifiedReason = chatGptService.classifyVisitReason(visitReason);
+                String selectedDay = selectedDayMap.get(senderId);
+                String selectedTime = selectedTimeMap.get(senderId);
+                LocalDateTime visitDate = LocalDateTime.parse(selectedDay + "T" + selectedTime);
+                Optional<Relation> relationOptional = relationService.findByUserNumber(senderId);
+                Relation relation = relationOptional.get();
+                String ruc = relation.getRuc();
+                String confirmationMessage = "Su cita ha sido agendada para el día " + selectedDay + " a las " + selectedTime + " por el motivo de " + classifiedReason;
+                whatsAppService.sendTextMessage(senderId, confirmationMessage);
+                appointmentsService.scheduleAppointment(ruc, classifiedReason, visitDate, "");
+
+                isWaitingForVisitReason.put(senderId, false);
+                selectedDayMap.remove(senderId);
+                selectedTimeMap.remove(senderId);
+                selectedVisitReasonMap.remove(senderId);
             } else {
                 // Verificar si el usuario tiene una relación activa con un asesor
                 RelationAdviserCustomer relacionAsesorCliente = relationAdviserCustomerService.encontrarConversacionesActivas(senderId, true);
@@ -309,9 +336,27 @@ public class WebhookController {
                                 isTicketCreationInProgress.put(senderId, true);
                                 whatsAppService.sendTextMessage(senderId, "Por favor podrias indicar la descripcion del problema");
                             }/*else{
-                            whatsAppService.sendTextMessage(senderId, "Lo sentimos, como no eres ningun cliente no puedes generar tickets");
-                        }*/
-                        } else {
+                        whatsAppService.sendTextMessage(senderId, "Lo sentimos, como no eres ningun cliente no puedes generar tickets");
+                    }*/
+                        } else if(chatGptService.isAppointmentSchedulingRequired(text)){
+                            List<LocalDateTime> availableDates = appointmentsService.checkAvailableDates();
+                            Map<LocalDate, List<LocalDateTime>> datesByDay = availableDates.stream()
+                                    .collect(Collectors.groupingBy(LocalDateTime::toLocalDate));
+
+                            // Crear una lista de días disponibles con formato amigable
+                            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("EEEE, d 'de' MMMM", new Locale("es", "ES"));
+                            List<Map<String, String>> daysOptions = new ArrayList<>();
+                            for (LocalDate date : datesByDay.keySet()) {
+                                Map<String, String> option = new HashMap<>();
+                                option.put("id", date.toString());
+                                option.put("title", date.format(formatter));
+                                daysOptions.add(option);
+                            }
+
+                            // Enviar la lista de días disponibles al usuario
+                            whatsAppService.sendListMessage(senderId, "Por favor selecciona un día para su cita:", daysOptions);
+                        }
+                        else {
                             String analyzedResponse = sentimentAnalysisService.analyzeTextAndSaveEmotions(text);
                             JsonObject jsonObject = JsonParser.parseString(analyzedResponse).getAsJsonObject();
                             String emotion = jsonObject.get("sentimiento_predominante").getAsString();
@@ -403,9 +448,18 @@ public class WebhookController {
                         System.out.println("Relación guardada: " + savedRelation);
                         break;
                 }
+            } else {
+                System.out.println("Ingreso aqui en seleccionar horario");
+                String selectedDay = interactiveMessage.getId();
+                handleDaySelection(senderId, selectedDay);
             }
+        } else if (messageType.equals("INTERACTIVE_BUTTON_REPLY")) {
+            WhatsAppWebhookButtonReplyContent interactiveMessage = (WhatsAppWebhookButtonReplyContent) message;
+            String selectedTime = interactiveMessage.getId();
+            handleTimeSelection(senderId, selectedTime);
         }
     }
+
 
     private void sendWelcomeMessage(String senderId) {
         // Envía un mensaje de bienvenida y solicita el DNI
@@ -414,6 +468,7 @@ public class WebhookController {
     }
 
     private String searchDniInExcel(String senderId, String dni) {
+        String range = "DB_USURIOS!A1:F";
         try {
             if (!dni.matches("\\d{8}")) {
                 int attempts = failedAttempts.getOrDefault(senderId, 0) + 1;
@@ -428,7 +483,7 @@ public class WebhookController {
                 return "El DNI ingresado no es válido. Por favor, ingresa un número de DNI de 8 dígitos.";
             }
 
-            List<List<Object>> excelData = sheetsService.connectToGoogleSheets();
+            List<List<Object>> excelData = sheetsService.connectToGoogleSheets(range);
             for (List<Object> row : excelData) {
                 if (row.size() > 4 && row.get(4) instanceof String && row.get(3).equals(dni)) {
                     String userId = row.get(0).toString();
@@ -440,7 +495,7 @@ public class WebhookController {
                     return userData;
                 }
             }
-        } catch (IOException | GeneralSecurityException e) {
+        } catch (IOException e) {
             e.printStackTrace();
         }
         return "Vemos que no eres cliente nuestro. Podrias por favor brindarnos tu nombre para continuar con tu consulta.";
@@ -628,7 +683,34 @@ public class WebhookController {
         surveyResponseService.saveSurveyResponse(surveyResponse);
     }
 
-    private long calculateResponseTime(LocalDateTime startTime, LocalDateTime endTime) {
-        return ChronoUnit.MILLIS.between(startTime, endTime);
+    public void handleDaySelection(String senderId, String selectedDay) {
+        LocalDate day = LocalDate.parse(selectedDay);
+        List<LocalDateTime> availableTimes = appointmentsService.checkAvailableDates().stream()
+                .filter(date -> date.toLocalDate().equals(day))
+                .collect(Collectors.toList());
+
+        // Crear una lista de horarios disponibles para el día seleccionado
+        DateTimeFormatter timeFormatter = DateTimeFormatter.ofPattern("HH:mm");
+        List<Map<String, String>> timeOptions = new ArrayList<>();
+        for (LocalDateTime time : availableTimes) {
+            Map<String, String> option = new HashMap<>();
+            option.put("id", time.toLocalTime().format(timeFormatter));
+            option.put("title", time.toLocalTime().format(timeFormatter));
+            timeOptions.add(option);
+        }
+
+        // Guardar el día seleccionado en un mapa para el seguimiento del estado
+        selectedDayMap.put(senderId, day.toString());
+
+        // Enviar los botones de horarios disponibles al usuario
+        whatsAppService.sendButtonMessage(senderId, "Por favor selecciona un horario para tu cita:", timeOptions);
     }
+
+    public void handleTimeSelection(String senderId, String selectedTime) {
+        selectedTimeMap.put(senderId, selectedTime);
+        whatsAppService.sendTextMessage(senderId, "Por favor, indícanos el motivo de tu visita:");
+        isWaitingForVisitReason.put(senderId, true);
+    }
+
+
 }

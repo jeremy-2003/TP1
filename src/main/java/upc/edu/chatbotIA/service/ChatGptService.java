@@ -5,10 +5,7 @@ import com.theokanning.openai.completion.chat.ChatMessage;
 import com.theokanning.openai.service.OpenAiService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
-import upc.edu.chatbotIA.model.Conversation;
-import upc.edu.chatbotIA.model.Relation;
-import upc.edu.chatbotIA.model.ServiceProduct;
-import upc.edu.chatbotIA.model.Ticket;
+import upc.edu.chatbotIA.model.*;
 import upc.edu.chatbotIA.repository.ConversationRepository;
 import upc.edu.chatbotIA.repository.RelationRepository;
 
@@ -23,24 +20,25 @@ import java.util.Optional;
 public class ChatGptService {
     private final OpenAiService openAiService;
     private final ServiceProductService serviceProductService;
-
+    private final AppointmentsService appointmentsService;
     private final ConversationRepository conversationRepository;
-    private final RelationRepository relationRepository;
+    private final RelationService relationService;
     private final SheetsService sheetsService;
     @Autowired
-    public ChatGptService(OpenAiService openAiService, ConversationRepository conversationRepository, RelationRepository relationRepository,
-                          SheetsService sheetsService, ServiceProductService serviceProductService) {
+    public ChatGptService(OpenAiService openAiService, ConversationRepository conversationRepository, RelationService relationService,
+                          SheetsService sheetsService, ServiceProductService serviceProductService, AppointmentsService appointmentsService) {
         this.openAiService = openAiService;
         this.conversationRepository = conversationRepository;
-        this.relationRepository = relationRepository;
+        this.relationService = relationService;
         this.sheetsService = sheetsService;
         this.serviceProductService = serviceProductService;
+        this.appointmentsService = appointmentsService;
     }
 
     public ChatMessage getChatCompletion(String userId, String userMessage, String emotion) {
         // Recuperar las conversaciones anteriores del usuario
         List<Conversation> previousConversations = conversationRepository.findByUserNumberOrderByTimestampAsc(userId);
-        Optional<Relation> relationOptional = relationRepository.findByUserNumber(userId);
+        Optional<Relation> relationOptional = relationService.findByUserNumber(userId);
         Relation relation = relationOptional.get();
         Long relationUserId = relation.getUserId();
         String ruc = relation.getRuc();
@@ -94,6 +92,28 @@ public class ChatGptService {
         } else {
             activeServicesInfo.append("El usuario no tiene ningún servicio porque no es cliente.\n");
         }
+
+        // Construir la información de las citas pendientes para incluirla en el prompt
+        StringBuilder appointmentsInfo = new StringBuilder();
+        if (ruc != null) {
+            // Obtener las citas pendientes del cliente
+            List<Appointment> pendingAppointments = appointmentsService.getAppointmentsByRucAndEstado(ruc);
+
+            if (!pendingAppointments.isEmpty()) {
+                appointmentsInfo.append("Citas pendientes del cliente:\n");
+                for (Appointment appointment : pendingAppointments) {
+                    appointmentsInfo.append("- Servicio: ").append(appointment.getService())
+                            .append(", Fecha de visita: ").append(appointment.getVisitDate())
+                            .append(", Observación: ").append(appointment.getObservation())
+                            .append("\n");
+                }
+            } else {
+                appointmentsInfo.append("No se encontraron citas pendientes para el cliente.\n");
+            }
+        } else {
+            appointmentsInfo.append("El usuario no tiene ninguna cita pendiente porque no es cliente.\n");
+        }
+
         ChatMessage systemMessage = new ChatMessage();
         systemMessage.setRole("system");
         systemMessage.setContent(
@@ -126,7 +146,9 @@ public class ChatGptService {
                         "[TICKETS DEL USUARIO]:\n" +
                         ticketsInfo.toString() +
                         "[SERVICIOS ACTIVOS DEL CLIENTE]:\n" +
-                        activeServicesInfo.toString()
+                        activeServicesInfo.toString() +
+                        "[CITAS PENDIENTES DEL CLIENTE]:\n" +
+                        appointmentsInfo.toString()
         );
         // Construir la lista de mensajes de chat incluyendo el mensaje del sistema y el historial de conversación
         List<ChatMessage> chatMessages = new ArrayList<>();
@@ -142,7 +164,7 @@ public class ChatGptService {
         // Construir la solicitud de completado de chat
         ChatCompletionRequest completionRequest = ChatCompletionRequest.builder()
                 .messages(chatMessages)
-                .model("gpt-3.5-turbo-0125")
+                .model("gpt-4o-2024-05-13")
                 .build();
 
         // Enviar la solicitud al servicio de OpenAI y obtener la respuesta
@@ -215,10 +237,10 @@ public class ChatGptService {
         ChatMessage systemMessage = new ChatMessage();
         systemMessage.setRole("system");
         systemMessage.setContent(
-                "[INSTRUCCIONES]: Evalúa si el siguiente mensaje del cliente solicita explícitamente la creación de un nuevo ticket de soporte." +
-                        "[OBLIGATORIO]: Responde 'Sí' si el mensaje indica claramente la necesidad de crear un nuevo ticket o 'No' si no se requiere, incluyendo situaciones donde el cliente se refiere a tickets ya existentes.\n" +
-                        "[NOTA]: Si el mensaje del cliente solo menciona problemas o solicitudes de información sin pedir explícitamente la creación de un nuevo ticket, responde 'No'.\n\n" +
-                        "[MENSAJE]: " + userMessage +
+                "[INSTRUCCIONES]: Evalúa si el siguiente mensaje del cliente solicita explícitamente la creación de un nuevo ticket de soporte o reportar un problema.\n" +
+                        "[OBLIGATORIO]: Responde únicamente 'Sí' si el mensaje indica claramente la necesidad de crear un nuevo ticket de soporte o reportar un problema, usando términos como 'crear un ticket', 'abrir un ticket', 'necesito un nuevo ticket', 'quiero registrar un ticket', 'quiero reportar un problema', 'necesito reportar un problema', 'quiero informar un problema'. Responde 'No' si el mensaje no requiere la creación de un nuevo ticket ni reportar un problema.\n" +
+                        "[NOTA]: Si el mensaje del cliente solo menciona problemas o solicitudes de información sin pedir explícitamente la creación de un nuevo ticket o reportar un problema, o si se refiere a tickets ya existentes, responde 'No'.\n\n" +
+                        "[MENSAJE DEL CLIENTE]: " + userMessage +
                         "\n\n[NOTA]: Si el mensaje del cliente solo solicita información sobre el estado de un ticket existente, responde 'No'."
         );
 
@@ -230,10 +252,8 @@ public class ChatGptService {
                 .model("gpt-3.5-turbo-0125")
                 .build();
         ChatMessage assistantMessage = openAiService.createChatCompletion(completionRequest).getChoices().get(0).getMessage();
-        System.out.println(assistantMessage.getContent().trim().equalsIgnoreCase("Sí"));
         return assistantMessage.getContent().trim().equalsIgnoreCase("Sí");
     }
-
 
     public String evaluateUrgency(String userDescription) {
         ChatMessage systemMessage = new ChatMessage();
@@ -254,8 +274,52 @@ public class ChatGptService {
 
         ChatMessage urgencyMessage = openAiService.createChatCompletion(completionRequest)
                 .getChoices().get(0).getMessage();
-
         return urgencyMessage.getContent().trim().toUpperCase();
     }
+
+    public boolean isAppointmentSchedulingRequired(String userMessage) {
+        ChatMessage systemMessage = new ChatMessage();
+        systemMessage.setRole("system");
+        systemMessage.setContent(
+                "[INSTRUCCIONES]: Evalúa si el siguiente mensaje del cliente indica explícitamente la solicitud de agendar una cita de visita.\n" +
+                        "[OBLIGATORIO]: Responde únicamente 'Sí' si el mensaje indica claramente la necesidad de agendar una cita de visita, usando términos como 'agendar una cita', 'programar una visita', 'necesito una cita', 'quiero una visita'. Responde 'No' si el mensaje no requiere una cita.\n" +
+                        "[NOTA]: Si el mensaje del cliente solo menciona problemas o solicitudes de información sin pedir explícitamente una cita de visita, responde 'No'.\n\n" +
+                        "[MENSAJE DEL CLIENTE]: " + userMessage
+        );
+
+        List<ChatMessage> chatMessages = new ArrayList<>();
+        chatMessages.add(systemMessage);
+        chatMessages.add(new ChatMessage("user", userMessage));
+        ChatCompletionRequest completionRequest = ChatCompletionRequest.builder()
+                .messages(chatMessages)
+                .model("gpt-3.5-turbo-0125")
+                .build();
+        ChatMessage assistantMessage = openAiService.createChatCompletion(completionRequest).getChoices().get(0).getMessage();
+        return assistantMessage.getContent().trim().equalsIgnoreCase("Sí");
+    }
+
+    public String classifyVisitReason(String visitReason) {
+        ChatMessage systemMessage = new ChatMessage();
+        systemMessage.setRole("system");
+        systemMessage.setContent(
+                "[INSTRUCCIONES]: Evalúa y clasifica el siguiente motivo de visita en una de las siguientes categorías: 'INTERNET FIBRA OPTICA'," +
+                        "'INTERNET ADSL', 'INTERNET PERSONALIZADO', 'CONSULTORIA DE INFRAESTRUCTURA DE REDES', 'ASESORIA DE SOLUCIONES DE CONECTIVIDAD.'.\n" +
+                        "[OBLIGATORIO]: Responde únicamente con la categoría más adecuada basada en el motivo de la visita proporcionado.\n" +
+                        "[OBLIGATORIO] Solo debes de regresar la categoria sin agregar nada más." +
+                        "[NOTA]: Si no puedes clasificar el motivo en ninguna de las categorías mencionadas, responde 'OTRO SERVICIO'.\n\n" +
+                        "[MOTIVO DE LA VISITA]: " + visitReason
+        );
+
+        List<ChatMessage> chatMessages = new ArrayList<>();
+        chatMessages.add(systemMessage);
+        chatMessages.add(new ChatMessage("user", visitReason));
+        ChatCompletionRequest completionRequest = ChatCompletionRequest.builder()
+                .messages(chatMessages)
+                .model("gpt-3.5-turbo-0125")
+                .build();
+        ChatMessage assistantMessage = openAiService.createChatCompletion(completionRequest).getChoices().get(0).getMessage();
+        return assistantMessage.getContent().trim();
+    }
+
 
 }
