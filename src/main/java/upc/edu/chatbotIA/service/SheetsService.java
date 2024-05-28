@@ -15,7 +15,10 @@ import com.google.api.services.sheets.v4.Sheets;
 import com.google.api.services.sheets.v4.SheetsScopes;
 import com.google.api.services.sheets.v4.model.AppendValuesResponse;
 import com.google.api.services.sheets.v4.model.ValueRange;
+import jakarta.annotation.PostConstruct;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestTemplate;
 import upc.edu.chatbotIA.model.Appointment;
 import upc.edu.chatbotIA.model.ServiceProduct;
 import upc.edu.chatbotIA.model.Ticket;
@@ -37,22 +40,38 @@ public class SheetsService {
     private static final JsonFactory JSON_FACTORY = GsonFactory.getDefaultInstance();
     private static final String TOKENS_DIRECTORY_PATH = "tokens";
     private static final List<String> SCOPES = Collections.singletonList(SheetsScopes.SPREADSHEETS);
-    private static final String CREDENTIALS_FILE_PATH = "credentials.json";
+    @Value("${googlesheets.credentials}")
+    private String credentialsUrl;
     private static final String SPREADSHEET_ID = "16HlW2_3ipWkywHkTvhI-nwEFhMOEJSEOVStT3rTNXv0";
     private static final String USERS_RANGE = "DB_USURIOS!A1:F4";
     private final Sheets sheetsService;
+    private Credential credential;
+    @PostConstruct
+    public void init() throws IOException {
+        this.credential = loadCredentials();
+    }
+
+    private Credential loadCredentials() throws IOException {
+        RestTemplate restTemplate = new RestTemplate();
+        String credentialsJson = restTemplate.getForObject(credentialsUrl, String.class);
+        if (credentialsJson == null) {
+            throw new IOException("Unable to load credentials from URL: " + credentialsUrl);
+        }
+        GoogleCredential credential = GoogleCredential.fromStream(
+                        new ByteArrayInputStream(credentialsJson.getBytes()))
+                .createScoped(Collections.singleton(SheetsScopes.SPREADSHEETS));
+        return credential;
+    }
+
+    public Credential getCredentials() {
+        return credential;
+    }
 
     public SheetsService() throws IOException, GeneralSecurityException {
         final NetHttpTransport HTTP_TRANSPORT = GoogleNetHttpTransport.newTrustedTransport();
         this.sheetsService = new Sheets.Builder(HTTP_TRANSPORT, JSON_FACTORY, getCredentials())
                 .setApplicationName(APPLICATION_NAME)
                 .build();
-    }
-
-    private Credential getCredentials() throws IOException {
-        GoogleCredential credential = GoogleCredential.fromStream(new FileInputStream("src/main/resources/credentials.json"))
-                .createScoped(Collections.singleton(SheetsScopes.SPREADSHEETS));
-        return credential;
     }
 
 
