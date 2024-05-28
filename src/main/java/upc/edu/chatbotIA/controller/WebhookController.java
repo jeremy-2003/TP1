@@ -509,7 +509,7 @@ public class WebhookController {
         relation.setName(name);
         relation.setRuc(ruc);
         relation.setCompany(companyName);
-        relation.setExpirationTime(LocalDateTime.now().plusMinutes(5));
+        relation.setExpirationTime(LocalDateTime.now().plusMinutes(30));
         relation.setActive(true);
         relation.setLastInteractionTime(LocalDateTime.now());
         relation.setClient(client);
