@@ -328,5 +328,24 @@ public class ChatGptService {
         return assistantMessage.getContent().trim();
     }
 
+    public String generateEmpatheticResponse(String issueDescription) {
+        ChatMessage systemMessage = new ChatMessage();
+        systemMessage.setRole("system");
+        systemMessage.setContent(
+                "[INSTRUCCIONES]: Genera una respuesta empática para el siguiente problema descrito por el cliente. " +
+                        "La respuesta debe ser comprensiva y tranquilizadora, lamentando el inconveniente y asegurando al cliente que su problema será atendido.\n\n" +
+                        "[PROBLEMA DEL CLIENTE]: " + issueDescription
+        );
 
+        List<ChatMessage> chatMessages = new ArrayList<>();
+        chatMessages.add(systemMessage);
+
+        ChatCompletionRequest completionRequest = ChatCompletionRequest.builder()
+                .messages(chatMessages)
+                .model("gpt-3.5-turbo-0125")
+                .build();
+
+        ChatMessage responseMessage = openAiService.createChatCompletion(completionRequest).getChoices().get(0).getMessage();
+        return responseMessage.getContent().trim();
+    }
 }

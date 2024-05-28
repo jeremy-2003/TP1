@@ -323,7 +323,8 @@ public class WebhookController {
                             String urgency = chatGptService.evaluateUrgency(text);
                             ticketService.createNewTicket(userId, description, urgency, "PENDIENTE");
                             isTicketCreationInProgress.put(senderId, false); // Limpiar el estado de espera de descripción
-                            whatsAppService.sendTextMessage(senderId, "🎉 ¡Tu ticket ha sido creado con éxito! Un asesor se pondrá en contacto contigo pronto. 😊"); // Enviar id de ticket
+                            String empatheticResponse = chatGptService.generateEmpatheticResponse(description);
+                            whatsAppService.sendTextMessage(senderId, " Tu ticket ha sido creado con éxito! Un asesor se pondrá en contacto contigo pronto. 😊"); // Enviar id de ticket
                         } else if (chatGptService.isTicketCreationRequired(text)) {
                             Optional<Relation> relationObtain = relationService.findByUserNumber(senderId);
                             Relation relation = relationObtain.get();
