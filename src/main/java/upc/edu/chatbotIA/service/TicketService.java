@@ -3,7 +3,6 @@ package upc.edu.chatbotIA.service;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import upc.edu.chatbotIA.model.Ticket;
-import upc.edu.chatbotIA.repository.TicketRepository;
 
 import java.io.IOException;
 import java.security.GeneralSecurityException;

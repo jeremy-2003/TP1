@@ -7,7 +7,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import upc.edu.chatbotIA.model.*;
 import upc.edu.chatbotIA.repository.ConversationRepository;
-import upc.edu.chatbotIA.repository.RelationRepository;
 
 import java.io.IOException;
 import java.security.GeneralSecurityException;

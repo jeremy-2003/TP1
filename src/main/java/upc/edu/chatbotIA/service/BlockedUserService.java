@@ -27,7 +27,7 @@ public class BlockedUserService {
     public void blockUser(String userId) {
         BlockedUser blockedUser = new BlockedUser();
         blockedUser.setUserNumber(userId);
-        blockedUser.setBlockTime(LocalDateTime.now().plusMinutes(2));
+        blockedUser.setBlockTime(LocalDateTime.now().plusMinutes(5));
         System.out.println("Esto se guardara" + blockedUser.getUserNumber() + ", " + blockedUser.getBlockTime());
         blockedUserRepository.save(blockedUser);
     }

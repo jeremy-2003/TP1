@@ -1,20 +1,16 @@
 package upc.edu.chatbotIA.controller;
 import java.io.File;
 import java.io.IOException;
-import java.security.GeneralSecurityException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.time.temporal.ChronoUnit;
 import java.util.*;
-import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.infobip.model.*;
 
 import com.theokanning.openai.completion.chat.ChatMessage;
-import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -25,7 +21,6 @@ import org.springframework.web.bind.annotation.RestController;
 
 import upc.edu.chatbotIA.model.*;
 import upc.edu.chatbotIA.repository.AdviserRepository;
-import upc.edu.chatbotIA.repository.RelationRepository;
 import upc.edu.chatbotIA.service.*;
 import upc.edu.chatbotIA.util.AudioDownloader;
 
@@ -120,7 +115,7 @@ public class WebhookController {
                                 // Finalizar la relación entre el asesor y el cliente
                                 relationAdviserCustomerService.finalizarConversacion(relacionAsesorCliente);
                                 // Enviar mensaje al cliente indicando que está de vuelta con el chatbot
-                                String welcomeBackMessage = "Hola, soy TeleBuddy. Estás de vuelta conmigo. ¿En qué más puedo ayudarte?";
+                                String welcomeBackMessage = "¡Hola nuevamente, soy TeleBuddy! \uD83D\uDE0A Espero que la atención con nuestro asesor haya sido útil. ¿Hay algo más en lo que pueda asistirte hoy?";
                                 whatsAppService.sendTextMessage(customerNumber, welcomeBackMessage);
                                 Relation relation = relationService.findByUserNumber(customerNumber).orElse(null);
                                 if (relation != null) {
@@ -132,7 +127,7 @@ public class WebhookController {
                                     }
                                     relationService.save(relation);
                                 }
-                                whatsAppService.sendTextMessage(senderId, "Has finalizado la conversación con el cliente de número" + customerNumber + " y nombre " + relation.getName());
+                                whatsAppService.sendTextMessage(senderId, "Has finalizado la conversación con el cliente de número " + customerNumber + " y nombre " + relation.getName());
 
                                 return ResponseEntity.ok().build();
                             } else {
@@ -151,7 +146,7 @@ public class WebhookController {
                 }
                 Optional<Relation> existingRelation = relationService.findByUserNumber(senderId);
                 if (blockedUserService.isUserBlocked(senderId)) {
-                    whatsAppService.sendTextMessage(senderId, "Estás temporalmente bloqueado. Por favor, espera unos minutos antes de intentar enviar mensajes nuevamente.");
+                    whatsAppService.sendTextMessage(senderId, "\uD83D\uDEAB Estás temporalmente bloqueado. Por favor, espera 5 minutos antes de intentar enviar mensajes nuevamente. ¡Gracias por tu paciencia!");
                     return ResponseEntity.ok().build();
                 }
                 BlockedUser blockedUser = blockedUserService.findByUserId(senderId);
@@ -177,7 +172,7 @@ public class WebhookController {
                     } else if (!relation.getActive() && relation.getExpirationTime().isAfter(now)) {
                         // Si la relación está inactiva pero no ha expirado, enviar un saludo personalizado y procesar el mensaje normalmente
                         long startTime = System.currentTimeMillis();
-                        String welcomeMessage = "Hola " + relation.getName() + ", ¡bienvenido de nuevo! ¿En qué podemos ayudarte?";
+                        String welcomeMessage = "Hola " + relation.getName() + ", ¡Bienvenido de nuevo! 😃 Indicame en que puedo ayudarte esta vez.";
                         whatsAppService.sendTextMessage(senderId, welcomeMessage);
                         // Actualizar la marca de tiempo de interacción y reactivar la relación
                         long endTime = System.currentTimeMillis();
@@ -208,12 +203,12 @@ public class WebhookController {
                             String text = textMessage.getText();
                             if (isFirstMessage.get(senderId)) {
                                 String userData = searchDniInExcel(senderId, text);
-                                if (userData.equals("Vemos que no eres cliente nuestro. Podrias por favor brindarnos tu nombre para continuar con tu consulta.")) {
+                                if (userData.equals("Vemos que no eres cliente nuestro. 🤔 ¿Podrías, por favor, brindarnos tu nombre para continuar con tu consulta? ✍️")) {
                                     whatsAppService.sendTextMessage(senderId, userData);
                                     isFirstMessage.put(senderId, false);
                                     conversationState.put(senderId, "AWAITING_NAME");
                                     saveRelation(senderId,"", "", "", "", false);
-                                } else if (userData.equals("El DNI ingresado no es válido. Por favor, ingresa un número de DNI de 8 dígitos.")) {
+                                } else if (userData.equals("El DNI ingresado no es válido. 🚫 Por favor, ingresa un número de DNI de 8 dígitos.")) {
                                     whatsAppService.sendTextMessage(senderId, userData);
                                     // Mantener el estado de primer mensaje para volver a solicitar el DNI
                                     isFirstMessage.put(senderId, true);
@@ -226,7 +221,7 @@ public class WebhookController {
                                 String state = conversationState.get(senderId);
                                 if (state != null && state.equals("AWAITING_NAME")) {
                                     String name = text;
-                                    whatsAppService.sendTextMessage(senderId, "Gracias, " + name + ". Comentanos en que podemos ayudarte.");
+                                    whatsAppService.sendTextMessage(senderId, "Gracias, " + name + ". 😊 Cuéntanos, ¿en qué podemos ayudarte?");
                                     Optional<Relation> relationToUpdate = relationService.findByUserNumber(senderId);
                                     if (relationToUpdate.isPresent()) {
                                         Relation relation = relationToUpdate.get();
@@ -263,7 +258,7 @@ public class WebhookController {
 
             if (isFirstMessage.containsKey(senderId) && isFirstMessage.get(senderId)) {
                 String userData = searchDniInExcel(senderId, text);
-                if (userData.equals("El DNI ingresado no es válido. Por favor, ingresa un número de DNI de 8 dígitos.")) {
+                if (userData.equals("El DNI ingresado no es válido. 🚫 Por favor, ingresa un número de DNI de 8 dígitos.")) {
                     whatsAppService.sendTextMessage(senderId, userData);
                     // Mantener el estado de primer mensaje para volver a solicitar el DNI
                     isFirstMessage.put(senderId, true);
@@ -282,7 +277,7 @@ public class WebhookController {
                 Optional<Relation> relationOptional = relationService.findByUserNumber(senderId);
                 Relation relation = relationOptional.get();
                 String ruc = relation.getRuc();
-                String confirmationMessage = "Su cita ha sido agendada para el día " + selectedDay + " a las " + selectedTime + " por el motivo de " + classifiedReason;
+                String confirmationMessage = "✅ Su cita ha sido agendada para el día " + selectedDay + " a las " + selectedTime + " por el motivo de " + classifiedReason + ".";
                 whatsAppService.sendTextMessage(senderId, confirmationMessage);
                 appointmentsService.scheduleAppointment(ruc, classifiedReason, visitDate, "");
 
@@ -304,10 +299,10 @@ public class WebhookController {
                             String asesorNumber = asesorDisponible.get();
                             String conversationSummary = chatGptService.generateConversationSummary(senderId);
                             String customerName = getCustomerName(senderId);
-                            String messageToAdvisor = "Atención: El cliente " + customerName + " (Número de celular: " + senderId + ") ha solicitado un asesor.\n\n" +
-                                    "Resumen de la conversación:\n" + conversationSummary;
+                            String messageToAdvisor = "🔔 Atención: El cliente " + customerName + " (Número de celular: " + senderId + ") ha solicitado un asesor.\n\n" +
+                                    "📋 Resumen de la conversación:\n" + conversationSummary + ".";
                             whatsAppService.sendTextMessage(asesorNumber, messageToAdvisor);
-                            whatsAppService.sendTextMessage(senderId, "Estamos comunicando a nuestros asesores para que se puedan conectar al chat. Por favor, espera un momento.");
+                            whatsAppService.sendTextMessage(senderId, "Estamos comunicando a nuestros asesores para que se puedan conectar al chat. ⏳ Por favor, espera un momento.");
                             guardarRelacionAsesorCliente(senderId, asesorNumber);
 
                             // Desactivar el procesamiento de mensajes para este usuario y marcar que está esperando al asesor
@@ -316,7 +311,7 @@ public class WebhookController {
 
                             chatInteractionMetricsService.markInteractionAsRequestedAdvisor(interaction);
                         } else {
-                            whatsAppService.sendTextMessage(senderId, "Lo sentimos, no hay asesores disponibles en este momento. Por favor, intente más tarde.");
+                            whatsAppService.sendTextMessage(senderId, "Lamentamos informarte que no hay asesores disponibles en este momento. 😔 Pero no te preocupes, cuéntame qué necesitas y haré todo lo posible para asistirte. ¡Estamos aquí para ayudarte!");
                         }
                     } else {
                         if (isTicketCreationInProgress.containsKey(senderId) && isTicketCreationInProgress.get(senderId)) {
@@ -328,13 +323,13 @@ public class WebhookController {
                             String urgency = chatGptService.evaluateUrgency(text);
                             ticketService.createNewTicket(userId, description, urgency, "PENDIENTE");
                             isTicketCreationInProgress.put(senderId, false); // Limpiar el estado de espera de descripción
-                            whatsAppService.sendTextMessage(senderId, "Tu ticket ha sido creado con éxito. Un asesor se pondrá en contacto contigo pronto.");
+                            whatsAppService.sendTextMessage(senderId, "🎉 ¡Tu ticket ha sido creado con éxito! Un asesor se pondrá en contacto contigo pronto. 😊"); // Enviar id de ticket
                         } else if (chatGptService.isTicketCreationRequired(text)) {
                             Optional<Relation> relationObtain = relationService.findByUserNumber(senderId);
                             Relation relation = relationObtain.get();
                             if (relation.getUserId() != null) {
                                 isTicketCreationInProgress.put(senderId, true);
-                                whatsAppService.sendTextMessage(senderId, "Por favor podrias indicar la descripcion del problema");
+                                whatsAppService.sendTextMessage(senderId, "¿Podrías, por favor, indicar la descripción del problema? 📝");
                             }/*else{
                         whatsAppService.sendTextMessage(senderId, "Lo sentimos, como no eres ningun cliente no puedes generar tickets");
                     }*/
@@ -354,7 +349,7 @@ public class WebhookController {
                             }
 
                             // Enviar la lista de días disponibles al usuario
-                            whatsAppService.sendListMessage(senderId, "Por favor selecciona un día para su cita:", daysOptions);
+                            whatsAppService.sendListMessage(senderId, "📅 Por favor, selecciona un día para tu cita:", daysOptions);
                         }
                         else {
                             String analyzedResponse = sentimentAnalysisService.analyzeTextAndSaveEmotions(text);
@@ -429,7 +424,7 @@ public class WebhookController {
                         break;
                     case 6:
                         handleSurveyResponse6(senderId, selectedOptionId);
-                        whatsAppService.sendTextMessage(senderId, "¡Gracias por completar la encuesta!");
+                        whatsAppService.sendTextMessage(senderId, "🎉 ¡Gracias por completar la encuesta! Tu opinión es muy importante para nosotros. 😊");
                         isSurveyInProgress.put(senderId, false);
                         isSurveyInProgress.remove(senderId);
                         currentSurveyQuestion.remove(senderId);
@@ -463,7 +458,8 @@ public class WebhookController {
 
     private void sendWelcomeMessage(String senderId) {
         // Envía un mensaje de bienvenida y solicita el DNI
-        String welcomeMessage = "¡Bienvenido! Por favor, ingresa tu número de DNI:";
+        String welcomeMessage = "¡Hola! Soy TeleBuddy, tu asistente virtual de SOE Industrial E.I.R.L. 😊 " +
+                "Estoy aquí para ayudarte con cualquier consulta sobre nuestros servicios del sector telecomunicaciones. \n Para comenzar, por favor ingresa tu número de DNI:";
         whatsAppService.sendTextMessage(senderId, welcomeMessage);
     }
 
@@ -478,9 +474,9 @@ public class WebhookController {
                 if (attempts >= 3) {
                     blockedUserService.blockUser(senderId);
                     failedAttempts.remove(senderId);
-                    return "Has sido bloqueado temporalmente debido a múltiples intentos fallidos. Por favor, intenta nuevamente más tarde.";
+                    return "🚫 Has sido bloqueado temporalmente debido a múltiples intentos fallidos. Por favor, intenta nuevamente en unos minutos. ¡Gracias por tu paciencia!";
                 }
-                return "El DNI ingresado no es válido. Por favor, ingresa un número de DNI de 8 dígitos.";
+                return "🚫 El DNI ingresado no es válido. Por favor, ingresa un número de DNI de 8 dígitos.";
             }
 
             List<List<Object>> excelData = sheetsService.connectToGoogleSheets(range);
@@ -491,14 +487,17 @@ public class WebhookController {
                     String ruc = row.get(4).toString();
                     String companyName = row.get(5).toString();
                     saveRelation(senderId, userId, name, ruc, companyName, true);
-                    String userData = "Hola " + name + ", es un gusto que te comuniques con nosotros. ¿En qué podemos ayudarte?";
+                    String userData = "¡Hola " + name + "! 😊 Es un gusto que te comuniques con nosotros. " +
+                            "Aquí puedes registrar tickets de problemas, consultar sobre nuestros servicios, obtener información " +
+                            "y recibir apoyo con cualquier inconveniente relacionado con nuestros servicios de telecomunicaciones. " +
+                            "¿En qué podemos ayudarte?";
                     return userData;
                 }
             }
         } catch (IOException e) {
             e.printStackTrace();
         }
-        return "Vemos que no eres cliente nuestro. Podrias por favor brindarnos tu nombre para continuar con tu consulta.";
+        return "Vemos que no eres cliente nuestro. 🤔 ¿Podrías, por favor, brindarnos tu nombre para continuar con tu consulta? ✍️";
     }
 
     private void saveRelation(String senderId, String userId, String name, String ruc, String companyName, Boolean client) {
@@ -703,12 +702,12 @@ public class WebhookController {
         selectedDayMap.put(senderId, day.toString());
 
         // Enviar los botones de horarios disponibles al usuario
-        whatsAppService.sendButtonMessage(senderId, "Por favor selecciona un horario para tu cita:", timeOptions);
+        whatsAppService.sendButtonMessage(senderId, "⏰ Por favor, selecciona un horario para tu cita:", timeOptions);
     }
 
     public void handleTimeSelection(String senderId, String selectedTime) {
         selectedTimeMap.put(senderId, selectedTime);
-        whatsAppService.sendTextMessage(senderId, "Por favor, indícanos el motivo de tu visita:");
+        whatsAppService.sendTextMessage(senderId, "✍️ Por favor, indícanos el motivo de agendar la visita:");
         isWaitingForVisitReason.put(senderId, true);
     }
 

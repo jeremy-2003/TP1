@@ -17,14 +17,6 @@ public class WhatsAppController {
         this.whatsAppService = whatsAppService;
     }
 
-/*
-    {
-      "to": "51935101723",
-      "content": {
-        "text": "Hola, este es un mensaje de prueba enviado desde Spring Boot."
-      }
-    }
-*/
     @PostMapping("/send-message")
     public String sendMessage(@RequestBody WhatsAppTextMessage requestBody) {
         try {

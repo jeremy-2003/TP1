@@ -28,7 +28,7 @@ public class InactivityCheckService {
 
     @Scheduled(fixedRate = 60000)
     public void checkInactiveConversations() {
-        LocalDateTime inactivityThreshold = LocalDateTime.now().minusMinutes(2);
+        LocalDateTime inactivityThreshold = LocalDateTime.now().minusMinutes(30);
         List<Relation> inactiveRelations = relationRepository.findByLastInteractionTimeBefore(inactivityThreshold);
 
         for (Relation relation : inactiveRelations) {
@@ -53,7 +53,7 @@ public class InactivityCheckService {
     }
 
     private void sendInactivityMessage(String senderId) {
-        String inactivityMessage = "La conversación se ha cerrado debido a la falta de interacción durante los últimos 10 minutos. Si necesitas ayuda adicional, no dudes en contactarnos nuevamente.";
+        String inactivityMessage = "🔔 La conversación se ha cerrado debido a la falta de interacción durante los últimos 30 minutos. Si necesitas ayuda adicional, no dudes en contactarnos nuevamente. ¡Estamos aquí para ayudarte!";
         whatsAppService.sendTextMessage(senderId, inactivityMessage);
     }
 }
