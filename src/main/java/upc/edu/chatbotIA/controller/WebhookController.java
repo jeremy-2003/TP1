@@ -179,6 +179,7 @@ public class WebhookController {
                         long responseTime = endTime - startTime;
                         chatInteractionMetricsService.updateAverageResponseTime(interaction, responseTime);
                         relation.setLastInteractionTime(now);
+                        relation.setExpirationTime(LocalDateTime.now().plusMinutes(30));
                         relation.setActive(true);
                         relationService.save(relation);
                     }

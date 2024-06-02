@@ -36,31 +36,31 @@ import java.util.stream.Collectors;
 
 @Service
 public class SheetsService {
+    private Sheets sheetsService;
     private static final String APPLICATION_NAME = "Google Sheets API Java Quickstart";
+    private static final String SPREADSHEET_ID = "16HlW2_3ipWkywHkTvhI-nwEFhMOEJSEOVStT3rTNXv0";
     private static final JsonFactory JSON_FACTORY = GsonFactory.getDefaultInstance();
-    private static final String TOKENS_DIRECTORY_PATH = "tokens";
-    private static final List<String> SCOPES = Collections.singletonList(SheetsScopes.SPREADSHEETS);
+
     @Value("${googlesheets.credentials}")
     private String credentialsUrl;
-    private static final String SPREADSHEET_ID = "16HlW2_3ipWkywHkTvhI-nwEFhMOEJSEOVStT3rTNXv0";
-    private static final String USERS_RANGE = "DB_USURIOS!A1:F4";
-    private final Sheets sheetsService;
     private Credential credential;
     @PostConstruct
-    public void init() throws IOException {
+    public void init() throws IOException, GeneralSecurityException {
         this.credential = loadCredentials();
+        final NetHttpTransport HTTP_TRANSPORT = GoogleNetHttpTransport.newTrustedTransport();
+        this.sheetsService = new Sheets.Builder(HTTP_TRANSPORT, JSON_FACTORY, credential)
+                .setApplicationName(APPLICATION_NAME)
+                .build();
     }
 
-    private Credential loadCredentials() throws IOException {
+    private GoogleCredential loadCredentials() throws IOException {
         RestTemplate restTemplate = new RestTemplate();
         String credentialsJson = restTemplate.getForObject(credentialsUrl, String.class);
         if (credentialsJson == null) {
             throw new IOException("Unable to load credentials from URL: " + credentialsUrl);
         }
-        GoogleCredential credential = GoogleCredential.fromStream(
-                        new ByteArrayInputStream(credentialsJson.getBytes()))
+        return GoogleCredential.fromStream(new ByteArrayInputStream(credentialsJson.getBytes()))
                 .createScoped(Collections.singleton(SheetsScopes.SPREADSHEETS));
-        return credential;
     }
 
     public Credential getCredentials() {
