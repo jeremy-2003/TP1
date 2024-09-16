@@ -3,15 +3,13 @@ package upc.edu.chatbotIA.controller;
 import com.theokanning.openai.completion.chat.ChatMessage;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 import upc.edu.chatbotIA.dto.ChatRequest;
 import upc.edu.chatbotIA.dto.ChatResponse;
 import upc.edu.chatbotIA.service.ChatGptService;
 
-@RestController("/openai")
+@RestController
+@RequestMapping("/openai")
 public class ChatGptController {
 
     private final ChatGptService chatGptService;
