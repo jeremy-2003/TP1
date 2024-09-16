@@ -6,7 +6,7 @@ import java.io.IOException;
 @Configuration
 public class InfobipApiClient {
 
-    private static final String BASE_URL = "https://api.infobip.com";
+    private static final String BASE_URL = "https://api.infobip.com"; // Infobip API base URL
     private static final MediaType JSON = MediaType.parse("application/json; charset=utf-8");
 
     private OkHttpClient client = new OkHttpClient();
