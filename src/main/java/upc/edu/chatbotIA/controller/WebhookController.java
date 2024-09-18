@@ -257,15 +257,19 @@ public class WebhookController {
             WhatsAppWebhookInboundTextMessage textMessage = (WhatsAppWebhookInboundTextMessage) message;
             String text = textMessage.getText();
 
-            if (isFirstMessage.containsKey(senderId) && isFirstMessage.get(senderId)) {
+            if (!isFirstMessage.containsKey(senderId) || isFirstMessage.get(senderId)) {
                 String userData = searchDniInExcel(senderId, text);
-                if (userData.equals("El DNI ingresado no es válido. 🚫 Por favor, ingresa un número de DNI de 8 dígitos.")) {
-                    whatsAppService.sendTextMessage(senderId, userData);
-                    // Mantener el estado de primer mensaje para volver a solicitar el DNI
+                whatsAppService.sendTextMessage(senderId, userData);
+
+                if (userData.startsWith("El DNI ingresado no es válido. 🚫 Por favor, ingresa un número de DNI de 8 dígitos.")) {
+                    // Keep waiting for a valid DNI
                     isFirstMessage.put(senderId, true);
                 } else {
-                    whatsAppService.sendTextMessage(senderId, userData);
+                    // Valid DNI or moved to next step
                     isFirstMessage.put(senderId, false);
+                    if (userData.equals("Vemos que no eres cliente nuestro. 🤔 ¿Podrías, por favor, brindarnos tu nombre para continuar con tu consulta? ✍️")) {
+                        conversationState.put(senderId, "AWAITING_NAME");
+                    }
                 }
             } else if (isWaitingForVisitReason.containsKey(senderId) && isWaitingForVisitReason.get(senderId)) {
                 String visitReason = text;
@@ -458,33 +462,39 @@ public class WebhookController {
                 int attempts = failedAttempts.getOrDefault(senderId, 0) + 1;
                 failedAttempts.put(senderId, attempts);
 
-                // Verificar si se supera el límite de intentos fallidos
                 if (attempts >= 3) {
                     blockedUserService.blockUser(senderId);
                     failedAttempts.remove(senderId);
                     return "🚫 Has sido bloqueado temporalmente debido a múltiples intentos fallidos. Por favor, intenta nuevamente en unos minutos. ¡Gracias por tu paciencia!";
                 }
-                return "🚫 El DNI ingresado no es válido. Por favor, ingresa un número de DNI de 8 dígitos.";
+
+                return "El DNI ingresado no es válido. 🚫 Por favor, ingresa un número de DNI de 8 dígitos.";
             }
 
             List<List<Object>> excelData = sheetsService.connectToGoogleSheets(range);
             for (List<Object> row : excelData) {
                 if (row.size() > 4 && row.get(4) instanceof String && row.get(3).equals(dni)) {
+                    // DNI encontrado, reiniciar contador de intentos fallidos
+                    failedAttempts.remove(senderId);
+
                     String userId = row.get(0).toString();
                     String name = row.get(1) + " " + row.get(2);
                     String ruc = row.get(4).toString();
                     String companyName = row.get(5).toString();
                     saveRelation(senderId, userId, name, ruc, companyName, true);
-                    String userData = "¡Hola " + name + "! 😊 Es un gusto que te comuniques con nosotros. " +
+
+                    return "¡Hola " + name + "! 😊 Es un gusto que te comuniques con nosotros. " +
                             "Aquí puedes registrar tickets de problemas, consultar sobre nuestros servicios, obtener información " +
                             "y recibir apoyo con cualquier inconveniente relacionado con nuestros servicios de telecomunicaciones. " +
                             "¿En qué podemos ayudarte?";
-                    return userData;
                 }
             }
         } catch (IOException e) {
             e.printStackTrace();
         }
+
+        // DNI no encontrado, pero válido
+        failedAttempts.remove(senderId);
         return "Vemos que no eres cliente nuestro. 🤔 ¿Podrías, por favor, brindarnos tu nombre para continuar con tu consulta? ✍️";
     }
 
